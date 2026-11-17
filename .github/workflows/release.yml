@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: rubygems
+    permissions:
+      id-token: write
+      contents: write
+    env:
+      BUNDLE_WITHOUT: lint
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ruby
+          bundler-cache: true
+      - name: Check that the tag matches the gem version
+        run: test "v$(ruby -Ilib -e 'require "leverprice/version"; print Leverprice::VERSION')" = "$GITHUB_REF_NAME"
+      - run: bundle exec rake test
+      - uses: rubygems/release-gem@v1
