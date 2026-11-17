@@ -1,4 +1,15 @@
-# Leverprice Ruby SDK
+<a href="https://leverprice.com">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/leverprice/.github/main/assets/repo/ruby-dark.svg">
+    <img alt="Leverprice SDK for Ruby" src="https://raw.githubusercontent.com/leverprice/.github/main/assets/repo/ruby-light.svg" width="100%">
+  </picture>
+</a>
+
+<p>
+  <a href="https://rubygems.org/gems/leverprice"><img alt="RubyGems" src="https://img.shields.io/gem/v/leverprice?label=gem&style=flat-square&labelColor=0F1011&color=5B4CF5"></a>
+  <a href="https://github.com/leverprice/leverprice-ruby/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/leverprice/leverprice-ruby/ci.yml?branch=main&label=ci&style=flat-square&labelColor=0F1011"></a>
+  <a href="https://github.com/leverprice/leverprice-ruby/blob/main/LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-5B4CF5?style=flat-square&labelColor=0F1011"></a>
+</p>
 
 Server-side SDK for [Leverprice](https://leverprice.com) price experiments. Ruby 3.1 or later, no runtime dependencies (OpenSSL, Net::HTTP and JSON from the standard library). Thread-safe and fork-safe, so it works under Puma, Unicorn, Passenger, Sidekiq and plain Rack.
 
