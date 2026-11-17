@@ -1,9 +1,11 @@
+<p>
 <a href="https://leverprice.com">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/leverprice/.github/main/assets/repo/ruby-dark.svg">
     <img alt="Leverprice SDK for Ruby" src="https://raw.githubusercontent.com/leverprice/.github/main/assets/repo/ruby-light.svg" width="100%">
   </picture>
 </a>
+</p>
 
 <p>
   <a href="https://rubygems.org/gems/leverprice"><img alt="RubyGems" src="https://img.shields.io/gem/v/leverprice?label=gem&style=flat-square&labelColor=0F1011&color=5B4CF5"></a>
