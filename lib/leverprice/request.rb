@@ -10,6 +10,21 @@ module Leverprice
     RACK_ENV_MARKERS = %w[REQUEST_METHOD rack.version SERVER_NAME].freeze
     NOT_A_COUNTRY = %w[XX ZZ T1 A1 A2 AP EU].freeze
     COUNTRY_INPUT_RE = /\A[ \t\n\x0B\x0C\r]*([A-Za-z]{2})[ \t\n\x0B\x0C\r]*\z/
+    # Headers every browser or client sends itself: never a source for the visitor's country.
+    VISITOR_SET_PREFIX_RE = /\A(?:sec-|accept|content-|if-|x-forwarded-|proxy-)/
+    VISITOR_SET_HEADERS = %w[
+      authorization cache-control connection cookie dnt forwarded host origin pragma priority purpose range referer
+      te upgrade-insecure-requests user-agent via x-real-ip x-requested-with
+    ].freeze
+    # Headers proxies and hosts set to the visitor's address, in the order they are read.
+    ADDRESS_HEADERS = %w[
+      cf-connecting-ip true-client-ip fastly-client-ip fly-client-ip x-real-ip x-forwarded-for
+    ].freeze
+    IPV4_RE = /\A(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\z/
+    HEX_GROUP_RE = /\A[0-9A-Fa-f]{1,4}\z/
+    ADDRESS_BLANKS_RE = /\A[ \t]+|[ \t]+\z/
+    BRACKET_PORT_RE = /\A:[0-9]{1,5}\z/
+    IPV4_PORT_RE = /\A[0-9.]+:[0-9]{1,5}\z/
 
     Info = Struct.new(:cookie_input, :assignment_cookies, :pinned, :user_agent, :prefetch, :country,
                       keyword_init: true)
@@ -53,6 +68,103 @@ module Leverprice
 
       code = code.upcase.force_encoding(Util::UTF_8)
       NOT_A_COUNTRY.include?(code) ? nil : code
+    end
+
+    def visitor_set_header?(name)
+      return false unless name.is_a?(String)
+
+      lower = name.b.downcase
+      VISITOR_SET_PREFIX_RE.match?(lower) || VISITOR_SET_HEADERS.include?(lower)
+    end
+
+    # The visitor's address: the first address header that holds one, else the connection's.
+    def client_address(request)
+      return nil if request.nil?
+
+      ADDRESS_HEADERS.each do |name|
+        value = header(request, name)
+        next if value.nil?
+
+        address = normalize_address(value.split(",", 2).first)
+        return address if address
+      end
+      normalize_address(connection_address(request))
+    end
+
+    # `REMOTE_ADDR` of a Rack env, or of the env behind a Rack or ActionDispatch request.
+    def connection_address(request)
+      env = request.is_a?(Hash) ? request : rack_env(request)
+      if env
+        return nil unless RACK_ENV_MARKERS.any? { |marker| env.key?(marker) }
+
+        return env["REMOTE_ADDR"]
+      end
+      request.respond_to?(:get_header) ? request.get_header("REMOTE_ADDR") : nil
+    rescue StandardError
+      nil
+    end
+
+    # IPv4 in decimal, IPv6 cut to its /64 network as four lowercase hex groups, IPv4-mapped IPv6 as IPv4;
+    # brackets, a port and a zone are dropped. nil for anything else.
+    def normalize_address(value)
+      return nil unless value.is_a?(String)
+
+      text = Util.utf8(value).b.gsub(ADDRESS_BLANKS_RE, "")
+      if text.start_with?("[")
+        close = text.index("]")
+        return nil if close.nil?
+
+        rest = text[(close + 1)..]
+        return nil unless rest.empty? || BRACKET_PORT_RE.match?(rest)
+
+        text = text[1...close]
+      elsif IPV4_PORT_RE.match?(text)
+        text = text[0, text.index(":")]
+      end
+      zone = text.index("%")
+      text = text[0, zone] if zone
+      v4 = ipv4(text)
+      return v4.join(".") if v4
+
+      groups = ipv6(text)
+      return nil unless groups
+      if groups[0, 5].all?(&:zero?) && groups[5] == 0xffff
+        return [groups[6] >> 8, groups[6] & 255, groups[7] >> 8, groups[7] & 255].join(".")
+      end
+
+      groups[0, 4].map { |group| group.to_s(16) }.join(":")
+    end
+
+    def ipv4(text)
+      match = IPV4_RE.match(text)
+      return nil unless match
+
+      parts = match.captures.map(&:to_i)
+      parts.all? { |part| part <= 255 } ? parts : nil
+    end
+
+    def ipv6(text)
+      if text.include?(".")
+        colon = text.rindex(":")
+        v4 = colon && ipv4(text[(colon + 1)..])
+        return nil unless v4
+
+        text = "#{text[0..colon]}#{((v4[0] << 8) | v4[1]).to_s(16)}:#{((v4[2] << 8) | v4[3]).to_s(16)}"
+      end
+      halves = text.split("::", -1)
+      return nil if halves.empty? || halves.size > 2
+
+      head = halves[0].split(":", -1)
+      tail = halves[1]&.split(":", -1)
+      groups = head + (tail || [])
+      return nil unless groups.all? { |group| HEX_GROUP_RE.match?(group) }
+
+      values = groups.map { |group| group.to_i(16) }
+      return values.size == 8 ? values : nil if tail.nil?
+      return nil if groups.size > 7
+
+      head_values = values.first(head.size)
+      head_values + ([0] * (8 - groups.size)) + values.drop(head.size)
     end
 
     def header(request, name)

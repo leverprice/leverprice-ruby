@@ -195,6 +195,8 @@ Pass whatever request object you have: a Rack env Hash, a `Rack::Request` or `Ac
 
 Pricing several products on one page? Pass the **same request** to each `get_price` call. The quotes share one visitor cookie, and the last quote's cookie carries every assignment.
 
+A visitor who refuses cookies still keeps one price and counts once: without a cookie, the SDK keys the visitor by an HMAC of their IP address (an IPv6 address by its /64 network), browser and languages, made with your project's secret on your server. Neither the address nor the browser leaves your server. The address comes from `CF-Connecting-IP`, `True-Client-IP`, `Fastly-Client-IP`, `Fly-Client-IP`, `X-Real-IP`, `X-Forwarded-For` or the Rack env's `REMOTE_ADDR`.
+
 `user_id:` accepts a String or an Integer. Convert other id types (UUID objects, `BSON::ObjectId`) with `to_s`.
 
 ## Regional prices
@@ -213,7 +215,8 @@ quote.regional? # true
 quote = LEVERPRICE.get_price("pro", request: request, country: lookup_country(request.ip))
 ```
 
-- **The country.** Name only a header your host or CDN sets and overwrites: a header a visitor can send themselves would let them pick their own price. To decide in code instead, pass `country_header:` to `Leverprice::Client.new` (it replaces the project setting) or `country:` to `get_price` (it wins over both). Give the HTTP header name, not the Rack key: the SDK finds `HTTP_CF_IPCOUNTRY` in a Rack env by itself. `CF_IPCountry` and `CF-IPCountry` share that key, so keep header names with underscores dropped in front of the app (the nginx default).
+- **The country.** Name only a header your host or CDN sets and overwrites: a header a visitor can send themselves would let them pick their own price. Headers every browser sends (`Accept-Language`, `X-Forwarded-For`, `User-Agent`…) are never read as the country: as `country_header:` they are ignored and reported to `on_error`. To decide in code instead, pass `country_header:` to `Leverprice::Client.new` (it replaces the project setting) or `country:` to `get_price` (it wins over both). Give the HTTP header name, not the Rack key: the SDK finds `HTTP_CF_IPCOUNTRY` in a Rack env by itself. `CF_IPCountry` and `CF-IPCountry` share that key, so keep header names with underscores dropped in front of the app (the nginx default).
+- **VPNs.** A visitor keeps the price of a dearer country they were seen in during the last 7 days, so turning on a VPN to a cheaper country doesn't lower it. That country is `quote.country`, and it travels in the signed `__pp` cookie, which a regional product now sets even without a test.
 - **Local currencies.** Regional prices in your product's currency ($12 in India instead of $29) need nothing in code. Prices in the visitor's own currency (₹999) are served only with `local_currencies: true`, which you set when your checkout charges `quote.price` in `quote.currency`; without it those visitors get the standard price, so a checkout with a fixed currency can never charge 99900 in dollars.
 - **Tests.** Each visitor still gets one sticky variant, at that variant's price for their country. A test can run in selected countries only, and countries can get their own share of traffic per price: both are set in the dashboard and need nothing from your code but the visitor's country.
 - **Checkout.** Always pass `quote.currency` with `quote.price`, also before you turn regional prices on: then they need no code change later. `checkout_url` is `nil` for a regional price: hosted checkout links are made for standard prices.
@@ -266,7 +269,7 @@ The config is revalidated every 30 seconds with an ETag, driven by traffic. When
 | `product_key` | The key you asked for |
 | `price` | Minor units; use it for display and as the checkout amount |
 | `currency` | Lowercase ISO 4217: your product's currency, or the region's for a regional price |
-| `country` | The visitor's country (ISO 3166-1 alpha-2) when known, else `nil` |
+| `country` | The country whose price applies (ISO 3166-1 alpha-2): the visitor's, or a dearer one they hold (see VPNs); `nil` when unknown |
 | `regional`, `regional?` | `true` when `price` is the regional price of `country` |
 | `is_fallback`, `fallback?` | `true` when `price` is your `fallback_price` |
 | `reason` | See below |
@@ -313,7 +316,7 @@ The config is revalidated every 30 seconds with an ETag, driven by traffic. When
 | `cookie_max_age_seconds` | `15552000` | 180 days |
 | `cookie_secure` | `true` | Set `false` only for plain-HTTP development |
 | `cookie_domain` | `nil` | |
-| `country_header` | `nil` | Request header your CDN or host sets to the visitor's country, such as `cf-ipcountry`. Overrides the project's country setting in Leverprice. Name only a header visitors cannot set |
+| `country_header` | `nil` | Request header your CDN or host sets to the visitor's country, such as `cf-ipcountry`. Overrides the project's country setting in Leverprice. A header every browser sends (`accept-language`, `x-forwarded-for`…) is ignored and reported to `on_error` |
 | `local_currencies` | `false` | Serve regional prices in the visitor's currency, not only in each product's own. Set it only when your checkout charges `quote.price` in `quote.currency` |
 | `flush_interval_ms` | `2000` | Longest exposures wait before being sent |
 | `trusted_root_keys` | `ROOT_PUBLIC_KEYS` | For staging and local development |

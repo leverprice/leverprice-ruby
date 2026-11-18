@@ -8,8 +8,10 @@ module Leverprice
     VISITOR_KEY_RE = /\A[0-9a-f]{32}\z/
     BODY_RE = /\A[A-Za-z0-9_-]+\z/
     SIG_RE = /\A[A-Za-z0-9_-]{22}\z/
+    COUNTRY_RE = /\A[A-Z]{2}\z/
 
-    State = Struct.new(:v, :a, :x)
+    # `c` and `t`: the country whose price the visitor holds, and since when (seconds since the epoch).
+    State = Struct.new(:v, :a, :x, :c, :t)
 
     module_function
 
@@ -18,7 +20,7 @@ module Leverprice
     end
 
     def clone_state(state)
-      State.new(state.v, state.a.dup, state.x.dup)
+      State.new(state.v, state.a.dup, state.x.dup, state.c, state.t)
     end
 
     def assign(state, experiment_id, variant_id)
@@ -35,7 +37,9 @@ module Leverprice
     end
 
     def serialize(state)
-      JSON.generate({ "v" => state.v, "a" => state.a, "x" => state.x })
+      body = { "v" => state.v, "a" => state.a, "x" => state.x }
+      body.merge!("c" => state.c, "t" => state.t) if state.c && state.t
+      JSON.generate(body)
     end
 
     def sign(key, state)
@@ -70,7 +74,13 @@ module Leverprice
         assignments[experiment_id] = variant_id if Util.id?(experiment_id) && Util.id?(variant_id)
       end
       exposed = raw["x"].is_a?(Array) ? raw["x"].select { |id| id.is_a?(String) && assignments.key?(id) } : []
-      State.new(raw["v"], assignments, exposed.first(MAX_EXPERIMENTS))
+      state = State.new(raw["v"], assignments, exposed.first(MAX_EXPERIMENTS))
+      since = Util.safe_int(raw["t"])
+      if Util.str_match?(COUNTRY_RE, raw["c"]) && since && since >= 0
+        state.c = raw["c"]
+        state.t = since
+      end
+      state
     end
 
     def header(name, value, max_age, secure:, domain:)

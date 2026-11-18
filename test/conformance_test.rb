@@ -39,6 +39,14 @@ class ConformanceTest < Minitest::Test
     { "v" => state.v, "a" => state.a.to_a, "x" => state.x }
   end
 
+  def assert_equal_or_nil(expected, actual, message)
+    if expected.nil?
+      assert_nil actual, message
+    else
+      assert_equal expected, actual, message
+    end
+  end
+
   def test_key_fingerprints
     V["keyFingerprints"].each do |vector|
       assert_equal vector["fingerprint"], OpenSSL::Digest::SHA256.hexdigest(vector["secretKey"])[0, 16]
@@ -61,8 +69,11 @@ class ConformanceTest < Minitest::Test
           refute_kind_of Leverprice::Error, result, "#{label}: #{result.inspect}"
           assert_equal step["version"], result.config.version, label
           assert_equal step["dropped"], result.dropped, label
+          assert_equal_or_nil step["countryHeader"], result.config.country_header, label if step.key?("countryHeader")
         else
-          assert_kind_of Leverprice::Error, result, label
+          assert_kind_of Leverprice::ConfigError, result, label
+          # What the next config request reports in Leverprice-Config-Error.
+          assert_equal step["code"], result.code, label
         end
       end
     end
@@ -215,6 +226,105 @@ class ConformanceTest < Minitest::Test
 
       assert_equal expected["exposures"], transport.events.map { |e| e.except("timestamp") }, "#{name}: exposures"
       assert_equal test_case["errors"], errors.grep_v(MALFORMED_PRODUCTS_RE), "#{name}: errors"
+      client.close
+    end
+  end
+
+  def test_country_header_names
+    V["countryHeaderNames"].each do |vector|
+      assert_equal vector["allowed"], !Leverprice::Request.visitor_set_header?(vector["name"]), vector["name"]
+    end
+  end
+
+  def test_addresses
+    V["addresses"].each do |vector|
+      assert_equal_or_nil vector["address"], Leverprice::Request.normalize_address(vector["value"]),
+                          vector["value"].inspect
+    end
+  end
+
+  def test_client_addresses
+    rack_request = Struct.new(:env)
+    V["clientAddresses"].each do |vector|
+      env = { "REQUEST_METHOD" => "GET" }
+      vector["headers"].each { |name, value| env["HTTP_#{name.upcase.tr("-", "_")}"] = value }
+      env["REMOTE_ADDR"] = vector["remoteAddress"] if vector.key?("remoteAddress")
+      requests = [env, rack_request.new(env)]
+      requests << vector["headers"] unless vector.key?("remoteAddress")
+
+      requests.each do |request|
+        assert_equal_or_nil vector["address"], Leverprice::Request.client_address(request),
+                            "#{vector.inspect} as #{request.class}"
+      end
+    end
+  end
+
+  def test_anon_visitors
+    V["anonVisitors"].each do |vector|
+      assert_equal "pp:anon:v1:#{vector["address"]}\n#{vector["userAgent"]}\n#{vector["acceptLanguage"]}",
+                   vector["message"]
+      assert_equal vector["v"], Leverprice::Util.hmac_hex(assignment_key, vector["message"], 32)
+    end
+  end
+
+  def test_products_header
+    V["productsHeader"].each do |vector|
+      transport = FakeTransport.new
+      client = Leverprice::Client.new(secret_key: V["secretKey"], products: vector["products"], transport: transport,
+                                      on_error: ->(_e) {})
+      client.refresh
+
+      assert_equal vector["header"], transport.config_calls.first.headers["Leverprice-Products"]
+      client.close
+    end
+  end
+
+  def test_country_hold
+    hold = V["countryHold"]
+    now = V["now"] / 1000
+    hold["cases"].each do |test_case|
+      name = test_case["name"]
+      headers = { "user-agent" => "Mozilla/5.0 Chrome/131.0" }
+      headers["x-geo-country"] = test_case["country"] if test_case["country"]
+      signed = test_case["cookie"]
+      held_since = nil
+      if signed
+        state = Leverprice::Cookie::State.new(hold["visitor"], (signed["a"] || []).to_h, signed["x"] || [])
+        held_since = now - signed["age"] if signed.key?("age")
+        state.c = signed["c"]
+        state.t = held_since
+        headers["cookie"] = "__pp=#{Leverprice::Cookie.sign(assignment_key, state)}"
+      end
+      errors = []
+      transport = FakeTransport.serving(hold["config"], etag: '"v5"')
+      client = Leverprice::Client.new(
+        secret_key: V["secretKey"],
+        products: hold["guards"],
+        trusted_root_keys: V["rootKeys"],
+        local_currencies: test_case.fetch("localCurrencies", false),
+        transport: transport,
+        clock: -> { V["now"] },
+        on_error: ->(e) { errors << e.message }
+      )
+      quote = client.get_price(test_case["productKey"], request: headers)
+      client.flush
+      set = quote.set_cookie.find { |header| header.start_with?("__pp=") }
+      back = set && Leverprice::Cookie.verify(assignment_key, set.delete_prefix("__pp=").split(";").first)
+      cookie = back && {
+        "c" => back.c,
+        "t" => back.t && (back.t == held_since ? "kept" : "fresh"),
+        "a" => back.a.to_a
+      }
+      actual = {
+        "price" => quote.price, "currency" => quote.currency, "country" => quote.country,
+        "regional" => quote.regional, "reason" => quote.reason, "variantId" => quote.variant_id,
+        "exposures" => transport.events.map { |e| e.except("timestamp", "visitorId") }, "cookie" => cookie
+      }
+
+      assert_equal test_case["expect"], actual, name
+      assert_equal now, back.t, name if cookie && cookie["t"] == "fresh"
+
+      assert_empty errors, name
       client.close
     end
   end

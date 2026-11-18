@@ -24,20 +24,28 @@ module Leverprice
     CATCH_UP_GAP_MS = 5_000
     MAX_DEDUPE = 10_000
     IDLE_WAIT_SECONDS = 60
+    PRODUCTS_HEADER = "Leverprice-Products"
+    CONFIG_ERROR_HEADER = "Leverprice-Config-Error"
+    MAX_REPORTED_PRODUCTS = 50
+    UNRESERVED_RE = /\A[A-Za-z0-9._~-]\z/
 
     Guard = Struct.new(:currency, :fallback_price)
     Region = Struct.new(:index, :currency, :price)
     Scope = Struct.new(:mutex, :cookie, :pinned)
     ScopeCookie = Struct.new(:input, :user_id, :assignment_key, :state)
     Context = Struct.new(:cookie, :user_agent, :user_id, :exposure, :bot, :country, keyword_init: true)
-    private_constant :Guard, :Region, :Scope, :ScopeCookie, :Context
+    # `changed`: the state differs from the request's cookie, so a new one is sent.
+    Visitor = Struct.new(:key, :user_id, :state, :changed)
+    private_constant :Guard, :Region, :Scope, :ScopeCookie, :Context, :Visitor
 
     # @api private
     class Flight
       attr_reader :started_at
+      attr_accessor :slow_reported
 
       def initialize(started_at)
         @started_at = started_at
+        @slow_reported = false
         @mutex = Mutex.new
         @finished = ConditionVariable.new
         @done = false
@@ -69,7 +77,8 @@ module Leverprice
     #   `max_price:` are deprecated and ignored since 0.4: the price range is set in Leverprice
     # @param secret_key [String, nil] `pp_sk_live_…` or `pp_sk_test_…`; missing or malformed turns the SDK off
     # @param country_header [String, nil] request header your CDN or host sets to the visitor's country, such as
-    #   `cf-ipcountry`; overrides the project's setting. Name only a header visitors cannot set
+    #   `cf-ipcountry`; overrides the project's setting. A header every browser sends itself (`accept-language`,
+    #   `x-forwarded-for`…) is ignored and reported to `on_error`
     # @param local_currencies [Boolean] serve regional prices in the visitor's currency, not only in each product's
     #   own; set it only when your checkout charges `quote.price` in `quote.currency`
     # @raise [ArgumentError] for invalid products, cookie_name or country_header
@@ -92,7 +101,9 @@ module Leverprice
       @cookie_max_age = Util.safe_int(cookie_max_age_seconds) || cookie_max_age_seconds || 15_552_000
       @cookie_secure = cookie_secure != false
       @cookie_domain = cookie_domain
-      @country_header = normalize_country_header(country_header)
+      named = normalize_country_header(country_header)
+      # A header the visitor sends would let them pick their own price: the project's setting is used.
+      @country_header = named && Request.visitor_set_header?(named) ? nil : named
       @local_currencies = local_currencies == true
       @flush_interval_ms = flush_interval_ms || 2_000
       @transport = transport || NetHTTPTransport.new
@@ -114,12 +125,21 @@ module Leverprice
       @server_version = 0
       @catch_up_at = 0
       @hmac_cache = nil
+      @config_error = nil
+      @products_header = products_header(@guards)
       @closed = false
       reset_runtime
       @scope_ivar = :"@__leverprice_scope_#{ForkTracker.register(self)}"
-      return if key.empty? || @secret_key || @disabled || Leverprice.env_disabled?
+      return if @disabled || Leverprice.env_disabled?
 
-      emit(Error.new("Leverprice: secret_key is not a pp_sk_live_… / pp_sk_test_… key; serving fallback prices."))
+      unless key.empty? || @secret_key
+        emit(Error.new("Leverprice: secret_key is not a pp_sk_live_… / pp_sk_test_… key; serving fallback prices."))
+      end
+      return unless named && @country_header.nil?
+
+      emit(Error.new(%(Leverprice: country_header "#{named}" is sent by visitors' browsers, so it would let them ) \
+                     "pick their own price; it is ignored. Name the header your CDN or host sets, such as " \
+                     "cf-ipcountry."))
     end
 
     # Returns the price to show and charge. Raises only for a product key missing from `products`.
@@ -387,14 +407,19 @@ module Leverprice
       return fallback_quote(key, guard, "unknown_product") unless product
       return fallback_quote(key, guard, "currency_mismatch") unless product.currency == guard.currency
 
-      experiment = experiment_for(product, info.country)
-      return base_quote(key, guard, product, info.country) unless experiment
+      # The country a visitor holds lives in the cookie, so it is read before the test is chosen.
+      guarded = config.country_hold.positive? && !product.regions.empty?
+      held = guarded ? visitor_for(request, context, info, scope, config) : nil
+      country = held ? held_country(held, guard, product, info.country, config.country_hold) : info.country
+      experiment = experiment_for(product, country)
+      return base_quote(key, guard, product, country, held, scope, info, config) unless experiment
       if experiment.variants.empty? || !experiment.variants.all? { |v| in_bounds?(product, v.price) }
         return fallback_quote(key, guard, "out_of_bounds")
       end
 
-      region = region_for(guard, product, info.country)
-      experiment_quote(key, guard, context, info, scope, config, product, experiment, region)
+      visitor = held || visitor_for(request, context, info, scope, config)
+      region = region_for(guard, product, country)
+      experiment_quote(key, guard, context, info, scope, config, product, experiment, region, country, visitor)
     rescue StandardError => e
       report(e)
       bot ? fallback_quote(key, guard, "bot") : no_config(key, guard, scope)
@@ -409,7 +434,7 @@ module Leverprice
       experiment.scope.include?(country) ? experiment : nil
     end
 
-    def base_quote(key, guard, product, country)
+    def base_quote(key, guard, product, country, held, scope, info, config)
       return fallback_quote(key, guard, "out_of_bounds") unless in_bounds?(product, product.price)
 
       region = region_for(guard, product, country)
@@ -419,6 +444,11 @@ module Leverprice
                 price_quote(key, guard, product.price, "base_price", product.checkout_url)
               end
       quote.country = country
+      if held
+        cookies = keep(held, scope, info, config)
+        # Outside a test the cookie only carries the held country: none held, none sent.
+        quote.set_cookie = held.state.c ? cookies : []
+      end
       quote
     end
 
@@ -444,38 +474,34 @@ module Leverprice
       fallback_quote(key, guard, "bot")
     end
 
-    def experiment_quote(key, guard, context, info, scope, config, product, experiment, region)
-      hmac_key = hmac_key_for(config.assignment_key)
-      user_id = normalize_user_id(context.user_id)
-      state = prior_state(scope, info, user_id, config) || verified_state(hmac_key, info)
-      changed = state.nil?
-      state ||= Cookie.new_state(Util.random_hex(16))
-
-      visitor_key = user_id ? "u:#{user_id}" : "a:#{state.v}"
+    def experiment_quote(key, guard, context, info, scope, config, product, experiment, region, country, visitor)
+      hmac_key = visitor.key
+      state = visitor.state
+      visitor_key = visitor.user_id ? "u:#{visitor.user_id}" : "a:#{state.v}"
       visitor_id = Util.hmac_hex(hmac_key, "pp:visitor:v1:#{visitor_key}", 32)
       assigned = state.a[experiment.id]
       sticky = assigned && experiment.variants.find { |v| v.id == assigned }
       variant = sticky || Util.pick_variant(experiment.variants, Util.bucket_for(experiment.salt, visitor_id),
-                                            experiment.split_of[info.country])
+                                            experiment.split_of[country])
       unless sticky
         Cookie.assign(state, experiment.id, variant.id)
-        changed = true
+        visitor.changed = true
       end
 
       logged = state.x.include?(experiment.id) || exposed?(experiment.id, visitor_id)
       if !logged && auto_exposure?(context.exposure) && !info.prefetch
-        record_exposure(experiment.id, variant.id, visitor_id, info.country)
+        record_exposure(experiment.id, variant.id, visitor_id, country)
         logged = true
       end
-      changed = true if logged && Cookie.mark_exposed(state, experiment.id)
-      scope.cookie = ScopeCookie.new(info.cookie_input, user_id, config.assignment_key, state) if scope
+      visitor.changed = true if logged && Cookie.mark_exposed(state, experiment.id)
+      set_cookie = keep(visitor, scope, info, config)
 
       signature = Util.hmac_hex(hmac_key, "pp:attr:v1:#{experiment.id}:#{variant.id}:#{visitor_id}", 16)
       Quote.new(
         product_key: key,
         price: region ? variant.regional[region.index] : variant.price,
         currency: region ? region.currency : guard.currency,
-        country: info.country,
+        country: country,
         regional: !region.nil?,
         is_fallback: false,
         reason: "experiment",
@@ -483,10 +509,62 @@ module Leverprice
         variant_id: variant.id,
         visitor_id: visitor_id,
         metadata: { "pp_exp" => experiment.id, "pp_var" => variant.id, "pp_vid" => visitor_id, "pp_sig" => signature },
-        set_cookie: changed ? [assignment_cookie(hmac_key, state)] : [],
+        set_cookie: set_cookie,
         checkout_url: region ? nil : (variant.checkout_url || product.checkout_url),
         exposure_logged: logged
       )
+    end
+
+    # The visitor behind the request: the state an earlier quote of the same request left, else the first valid
+    # assignment cookie, else a new visitor.
+    def visitor_for(request, context, info, scope, config)
+      hmac_key = hmac_key_for(config.assignment_key)
+      user_id = normalize_user_id(context.user_id)
+      state = prior_state(scope, info, user_id, config) || verified_state(hmac_key, info)
+      return Visitor.new(hmac_key, user_id, state, false) if state
+
+      Visitor.new(hmac_key, user_id, Cookie.new_state(new_visitor_key(hmac_key, request, info)), true)
+    end
+
+    # A browser without a cookie comes back as a new visitor every time, so its key comes from what stays the same
+    # between its requests (address, browser, languages), keyed by the project's secret: a visitor who refuses
+    # cookies keeps one price and counts once. Neither the address nor the browser leaves the server.
+    def new_visitor_key(hmac_key, request, info)
+      address = Request.client_address(request)
+      return Util.random_hex(16) unless address
+
+      language = Request.header(request, "accept-language") || ""
+      Util.hmac_hex(hmac_key, "pp:anon:v1:#{address}\n#{info.user_agent}\n#{language}", 32)
+    end
+
+    # Leverprice's VPN guard: a visitor seen lately in a country that pays more keeps that country's price, so
+    # switching a VPN to a cheaper country changes nothing until the hold runs out. Anywhere else, the visitor is
+    # priced where they are and that country is held from now on.
+    def held_country(visitor, guard, product, country, hold_seconds)
+      seconds = (now / 1000).floor
+      state = visitor.state
+      held = state.c && state.t && seconds - state.t < hold_seconds ? state.c : nil
+      return held if held && held != country && level_of(guard, product, held) > level_of(guard, product, country)
+
+      if country && held != country
+        state.c = country
+        state.t = seconds
+        visitor.changed = true
+      end
+      country
+    end
+
+    # What a visitor from `country` pays, as basis points of the standard price.
+    def level_of(guard, product, country)
+      region = region_for(guard, product, country)
+      region ? product.regions[region.index].level : Wire::STANDARD_LEVEL
+    end
+
+    # Remembers the visitor for the request's next quote; the Set-Cookie values when its state changed.
+    def keep(visitor, scope, info, config)
+      state = visitor.state
+      scope.cookie = ScopeCookie.new(info.cookie_input, visitor.user_id, config.assignment_key, state) if scope
+      visitor.changed ? [assignment_cookie(visitor.key, state)] : []
     end
 
     def prior_state(scope, info, user_id, config)
@@ -618,6 +696,20 @@ module Leverprice
       raise ArgumentError, "Leverprice: country_header is not a valid header name"
     end
 
+    # `key=currency` per product, sorted by the percent-encoded key, at most 50: tells the dashboard what the code
+    # prices.
+    def products_header(guards)
+      guards.map { |key, guard| [encode_key(key), guard.currency] }
+            .sort_by(&:first)
+            .first(MAX_REPORTED_PRODUCTS)
+            .map { |key, currency| "#{key}=#{currency}" }
+            .join(", ")
+    end
+
+    def encode_key(key)
+      Util.utf8(key).b.each_char.map { |char| UNRESERVED_RE.match?(char) ? char : format("%%%02X", char.ord) }.join
+    end
+
     def option(hash, *names)
       return nil unless hash.is_a?(Hash)
 
@@ -648,9 +740,20 @@ module Leverprice
       end
       return nil unless flight
 
-      remaining = @timeout_ms - (started - flight.started_at)
-      flight.wait(remaining / 1000.0) if remaining.positive?
-      @lock.synchronize { usable(now) }
+      # Each request waits its own timeout_ms: a fetch started earlier (preload, another request) must not
+      # shorten it.
+      finished = @timeout_ms.positive? ? flight.wait(@timeout_ms / 1000.0) : true
+      config, slow = @lock.synchronize do
+        ready = usable(now)
+        slow = ready.nil? && !finished && @inflight.equal?(flight) && !flight.slow_reported
+        flight.slow_reported = true if slow
+        [ready, slow]
+      end
+      if slow
+        report(Error.new("Leverprice config: still loading after #{@timeout_ms} ms (timeout_ms); " \
+                         "serving fallback prices until it arrives"))
+      end
+      config
     end
 
     def usable(at)
@@ -711,13 +814,19 @@ module Leverprice
     end
 
     def load_config(unconditional)
-      headers = {}
-      @lock.synchronize { headers["If-None-Match"] = @etag if !unconditional && @etag && usable(now) }
+      # Tells the dashboard whether visitors get real prices: the products in code, and why the last config was
+      # refused.
+      headers = { PRODUCTS_HEADER => @products_header }
+      @lock.synchronize do
+        headers[CONFIG_ERROR_HEADER] = @config_error if @config_error
+        headers["If-None-Match"] = @etag if !unconditional && @etag && usable(now)
+      end
       response = http("GET", "/v1/config", headers)
       warning = @lock.synchronize { apply_config(response, headers.key?("If-None-Match")) }
       report(Error.new(warning)) if warning
     rescue StandardError => e
       @lock.synchronize do
+        @config_error = e.code if e.is_a?(ConfigError)
         @failures += 1
         @retry_at = now + [MAX_BACKOFF_MS, 500 * (2**[@failures, 16].min)].min
       end
@@ -732,6 +841,7 @@ module Leverprice
         end
 
         warning = @acceptance.accept(parse_envelope(response.body), now).warning
+        @config_error = nil
         @etag = response.header("ETag")
       end
       @fetched_at = now
@@ -744,7 +854,7 @@ module Leverprice
     def parse_envelope(body)
       Util.parse_json(body)
     rescue StandardError
-      raise Error, "Leverprice config: response is not JSON"
+      raise ConfigError.new("malformed", "Leverprice config: response is not JSON")
     end
 
     def note_server_version(response)

@@ -101,6 +101,75 @@
       ]
     },
     {
+      "name": "a country header that visitors send themselves is never read, the config is accepted",
+      "steps": [
+        {
+          "envelope": {
+            "payload": "eyJzY2hlbWEiOjIsInByb2plY3RJZCI6InByb2pfY29uZm9ybWFuY2UiLCJ2ZXJzaW9uIjo1LCJpc3N1ZWRBdCI6MTc5OTk5OTk0MDAwMCwiZXhwaXJlc0F0Ijo0MTAyNDQ0ODAwMDAwLCJhc3NpZ25tZW50S2V5IjoiQmtCcE5CUmhwYzRqdVVwYllzZzhSemNwWFZMTlJ2OVZsZ2YyYzNFOVRfQSIsImtleUZpbmdlcnByaW50cyI6WyIwMDAwMDAwMGRlYWRiZWVmIiwiYjg2YWMwYzkyZTRkY2JmOSJdLCJjb3VudHJ5SGVhZGVyIjoiYWNjZXB0LWxhbmd1YWdlIiwicHJvZHVjdHMiOnsiYmFzaWMiOnsiaWQiOiJwcm9kX2Jhc2ljIiwiY3VycmVuY3kiOiJ1c2QiLCJwcmljZSI6OTAwLCJtaW5QcmljZSI6NTAwLCJtYXhQcmljZSI6MTUwMCwiZXhwZXJpbWVudCI6bnVsbH19fQ",
+            "signature": "YtsSWGOFuPoA4osD05lJeyXrvao3HFohpC6iL9EbC8tcjY5x8tTmplvzuPEzJZjVmQ0yW5TbplXOUlV-ymxbAw",
+            "keyId": "k1",
+            "keyset": {
+              "payload": "eyJzY2hlbWEiOjEsInZlcnNpb24iOjEsImlzc3VlZEF0IjoxNzk5OTEzNjAwMDAwLCJleHBpcmVzQXQiOm51bGwsImtleXMiOlt7ImlkIjoiazEiLCJwdWJsaWNLZXkiOiI3VWtveGlqUndzYnE2UU00a0ZtVllTbFpKenBjWV9rMk5zRkdGS3lITjlFIn1dfQ",
+              "signature": "0lqffTrq5uo3TEXIfn9BmlikHT0vnVKOkZbCpaOrlgTl-Z9dzd-qegsmG2Ewm_Ng5vnQyBcJAAh12fiGh3ZgAw",
+              "rootKeyId": "r1"
+            }
+          },
+          "expect": "accept",
+          "version": 5,
+          "dropped": [],
+          "countryHeader": null
+        },
+        {
+          "envelope": {
+            "payload": "eyJzY2hlbWEiOjIsInByb2plY3RJZCI6InByb2pfY29uZm9ybWFuY2UiLCJ2ZXJzaW9uIjo2LCJpc3N1ZWRBdCI6MTc5OTk5OTk0MDAwMCwiZXhwaXJlc0F0Ijo0MTAyNDQ0ODAwMDAwLCJhc3NpZ25tZW50S2V5IjoiQmtCcE5CUmhwYzRqdVVwYllzZzhSemNwWFZMTlJ2OVZsZ2YyYzNFOVRfQSIsImtleUZpbmdlcnByaW50cyI6WyIwMDAwMDAwMGRlYWRiZWVmIiwiYjg2YWMwYzkyZTRkY2JmOSJdLCJjb3VudHJ5SGVhZGVyIjoiWC1Gb3J3YXJkZWQtRm9yIiwicHJvZHVjdHMiOnsiYmFzaWMiOnsiaWQiOiJwcm9kX2Jhc2ljIiwiY3VycmVuY3kiOiJ1c2QiLCJwcmljZSI6OTAwLCJtaW5QcmljZSI6NTAwLCJtYXhQcmljZSI6MTUwMCwiZXhwZXJpbWVudCI6bnVsbH19fQ",
+            "signature": "rqNgzzKIyacwMfEJJwbn5CZOdhDwr0aHj99vRNpwRaun283xpM-qJhkzI2GkpERzpbfkNw6ttRNroemCePBSAA",
+            "keyId": "k1",
+            "keyset": {
+              "payload": "eyJzY2hlbWEiOjEsInZlcnNpb24iOjEsImlzc3VlZEF0IjoxNzk5OTEzNjAwMDAwLCJleHBpcmVzQXQiOm51bGwsImtleXMiOlt7ImlkIjoiazEiLCJwdWJsaWNLZXkiOiI3VWtveGlqUndzYnE2UU00a0ZtVllTbFpKenBjWV9rMk5zRkdGS3lITjlFIn1dfQ",
+              "signature": "0lqffTrq5uo3TEXIfn9BmlikHT0vnVKOkZbCpaOrlgTl-Z9dzd-qegsmG2Ewm_Ng5vnQyBcJAAh12fiGh3ZgAw",
+              "rootKeyId": "r1"
+            }
+          },
+          "expect": "accept",
+          "version": 6,
+          "dropped": [],
+          "countryHeader": null
+        },
+        {
+          "envelope": {
+            "payload": "eyJzY2hlbWEiOjIsInByb2plY3RJZCI6InByb2pfY29uZm9ybWFuY2UiLCJ2ZXJzaW9uIjo3LCJpc3N1ZWRBdCI6MTc5OTk5OTk0MDAwMCwiZXhwaXJlc0F0Ijo0MTAyNDQ0ODAwMDAwLCJhc3NpZ25tZW50S2V5IjoiQmtCcE5CUmhwYzRqdVVwYllzZzhSemNwWFZMTlJ2OVZsZ2YyYzNFOVRfQSIsImtleUZpbmdlcnByaW50cyI6WyIwMDAwMDAwMGRlYWRiZWVmIiwiYjg2YWMwYzkyZTRkY2JmOSJdLCJjb3VudHJ5SGVhZGVyIjoic2VjLWNoLXVhIiwicHJvZHVjdHMiOnsiYmFzaWMiOnsiaWQiOiJwcm9kX2Jhc2ljIiwiY3VycmVuY3kiOiJ1c2QiLCJwcmljZSI6OTAwLCJtaW5QcmljZSI6NTAwLCJtYXhQcmljZSI6MTUwMCwiZXhwZXJpbWVudCI6bnVsbH19fQ",
+            "signature": "wXWHCGyURrSiK2-TydBEQ3WtEndAiwrg03S46oA8sdesAyj7y39fjwnyaLfsxMuhBk_PA62CL6S8f4zvFerjDw",
+            "keyId": "k1",
+            "keyset": {
+              "payload": "eyJzY2hlbWEiOjEsInZlcnNpb24iOjEsImlzc3VlZEF0IjoxNzk5OTEzNjAwMDAwLCJleHBpcmVzQXQiOm51bGwsImtleXMiOlt7ImlkIjoiazEiLCJwdWJsaWNLZXkiOiI3VWtveGlqUndzYnE2UU00a0ZtVllTbFpKenBjWV9rMk5zRkdGS3lITjlFIn1dfQ",
+              "signature": "0lqffTrq5uo3TEXIfn9BmlikHT0vnVKOkZbCpaOrlgTl-Z9dzd-qegsmG2Ewm_Ng5vnQyBcJAAh12fiGh3ZgAw",
+              "rootKeyId": "r1"
+            }
+          },
+          "expect": "accept",
+          "version": 7,
+          "dropped": [],
+          "countryHeader": null
+        },
+        {
+          "envelope": {
+            "payload": "eyJzY2hlbWEiOjIsInByb2plY3RJZCI6InByb2pfY29uZm9ybWFuY2UiLCJ2ZXJzaW9uIjo4LCJpc3N1ZWRBdCI6MTc5OTk5OTk0MDAwMCwiZXhwaXJlc0F0Ijo0MTAyNDQ0ODAwMDAwLCJhc3NpZ25tZW50S2V5IjoiQmtCcE5CUmhwYzRqdVVwYllzZzhSemNwWFZMTlJ2OVZsZ2YyYzNFOVRfQSIsImtleUZpbmdlcnByaW50cyI6WyIwMDAwMDAwMGRlYWRiZWVmIiwiYjg2YWMwYzkyZTRkY2JmOSJdLCJjb3VudHJ5SGVhZGVyIjoiQ0YtSVBDb3VudHJ5IiwicHJvZHVjdHMiOnsiYmFzaWMiOnsiaWQiOiJwcm9kX2Jhc2ljIiwiY3VycmVuY3kiOiJ1c2QiLCJwcmljZSI6OTAwLCJtaW5QcmljZSI6NTAwLCJtYXhQcmljZSI6MTUwMCwiZXhwZXJpbWVudCI6bnVsbH19fQ",
+            "signature": "-XOp8tw1_w4Ykla7qL_YBCUFjXQD3uE8ZkwY8JgN2a23XmR6X2W0l6SLJcjO2MDfFfg6K6T4nVP1aOOXtfErAQ",
+            "keyId": "k1",
+            "keyset": {
+              "payload": "eyJzY2hlbWEiOjEsInZlcnNpb24iOjEsImlzc3VlZEF0IjoxNzk5OTEzNjAwMDAwLCJleHBpcmVzQXQiOm51bGwsImtleXMiOlt7ImlkIjoiazEiLCJwdWJsaWNLZXkiOiI3VWtveGlqUndzYnE2UU00a0ZtVllTbFpKenBjWV9rMk5zRkdGS3lITjlFIn1dfQ",
+              "signature": "0lqffTrq5uo3TEXIfn9BmlikHT0vnVKOkZbCpaOrlgTl-Z9dzd-qegsmG2Ewm_Ng5vnQyBcJAAh12fiGh3ZgAw",
+              "rootKeyId": "r1"
+            }
+          },
+          "expect": "accept",
+          "version": 8,
+          "dropped": [],
+          "countryHeader": "cf-ipcountry"
+        }
+      ]
+    },
+    {
       "name": "a country header that is not a header name is ignored, the config is accepted",
       "steps": [
         {
@@ -149,7 +218,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "bad_signature"
         }
       ]
     },
@@ -167,7 +237,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "bad_signature"
         }
       ]
     },
@@ -185,7 +256,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "bad_signature"
         }
       ]
     },
@@ -203,7 +275,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "untrusted"
         }
       ]
     },
@@ -221,7 +294,8 @@
               "rootKeyId": "r9"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "untrusted"
         }
       ]
     },
@@ -239,7 +313,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "untrusted"
         }
       ]
     },
@@ -252,7 +327,8 @@
             "signature": "XpQID3IrNRnsxFmdg792IffQApoIwxJ_Q5JmrRTBEn_fXRYID_-GyMklC33-d2SSTQGaWy9xYWEPyHs21GRRBg",
             "keyId": "k1"
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "untrusted"
         }
       ]
     },
@@ -261,11 +337,13 @@
       "steps": [
         {
           "envelope": "hello",
-          "expect": "reject"
+          "expect": "reject",
+          "code": "malformed"
         },
         {
           "envelope": null,
-          "expect": "reject"
+          "expect": "reject",
+          "code": "malformed"
         },
         {
           "envelope": [
@@ -280,7 +358,8 @@
               }
             }
           ],
-          "expect": "reject"
+          "expect": "reject",
+          "code": "malformed"
         }
       ]
     },
@@ -298,7 +377,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "expired"
         }
       ]
     },
@@ -316,7 +396,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "expired"
         }
       ]
     },
@@ -334,7 +415,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "untrusted"
         }
       ]
     },
@@ -373,7 +455,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "untrusted"
         },
         {
           "envelope": {
@@ -406,7 +489,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "malformed"
         }
       ]
     },
@@ -424,7 +508,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "malformed"
         }
       ]
     },
@@ -442,7 +527,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "malformed"
         }
       ]
     },
@@ -460,7 +546,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "wrong_key"
         }
       ]
     },
@@ -478,7 +565,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "malformed"
         }
       ]
     },
@@ -561,7 +649,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "untrusted"
         }
       ]
     },
@@ -594,7 +683,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "rollback"
         },
         {
           "envelope": {
@@ -642,7 +732,8 @@
               "rootKeyId": "r1"
             }
           },
-          "expect": "reject"
+          "expect": "reject",
+          "code": "wrong_project"
         }
       ]
     }
@@ -5118,6 +5209,1383 @@
         "setCookie": [],
         "exposures": []
       }
+    },
+    {
+      "name": "no cookie: the visitor key comes from the address, browser and languages",
+      "productKey": "pro",
+      "headers": {
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        "accept-language": "en-US,en;q=0.9",
+        "cf-connecting-ip": "203.0.113.7"
+      },
+      "userId": null,
+      "errors": [],
+      "expect": {
+        "price": 2900,
+        "currency": "usd",
+        "country": null,
+        "regional": false,
+        "isFallback": false,
+        "reason": "experiment",
+        "experimentId": "exp_A",
+        "variantId": "var_2",
+        "visitorId": "3d521675a1f83afa258021ac9c747bf6",
+        "metadata": {
+          "pp_exp": "exp_A",
+          "pp_var": "var_2",
+          "pp_vid": "3d521675a1f83afa258021ac9c747bf6",
+          "pp_sig": "3ebec557d9d4cf31"
+        },
+        "checkoutUrl": "https://buy.example.com/pro-29",
+        "exposureLogged": true,
+        "setCookie": [
+          "__pp=eyJ2IjoiZDcxYzUwYjJiNjhmNGE0NmVlZWMwYjBmYTRkNWM2N2IiLCJhIjp7ImV4cF9BIjoidmFyXzIifSwieCI6WyJleHBfQSJdfQ.bVm5fK6MgPqphPeA73cfHw; Path=/; Max-Age=15552000; SameSite=Lax; HttpOnly; Secure"
+        ],
+        "exposures": [
+          {
+            "type": "exposure",
+            "experimentId": "exp_A",
+            "variantId": "var_2",
+            "visitorId": "3d521675a1f83afa258021ac9c747bf6"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no cookie behind a proxy: the first X-Forwarded-For address",
+      "productKey": "pro",
+      "headers": {
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        "x-forwarded-for": "198.51.100.23, 10.0.0.1"
+      },
+      "userId": null,
+      "errors": [],
+      "expect": {
+        "price": 3900,
+        "currency": "usd",
+        "country": null,
+        "regional": false,
+        "isFallback": false,
+        "reason": "experiment",
+        "experimentId": "exp_A",
+        "variantId": "var_3",
+        "visitorId": "dbf81dd972452160e2db80fdbb9c185b",
+        "metadata": {
+          "pp_exp": "exp_A",
+          "pp_var": "var_3",
+          "pp_vid": "dbf81dd972452160e2db80fdbb9c185b",
+          "pp_sig": "fddda22fa4064e20"
+        },
+        "checkoutUrl": "https://buy.example.com/pro",
+        "exposureLogged": true,
+        "setCookie": [
+          "__pp=eyJ2IjoiNWQ1YTMyODRiOGFjNjAzYTg0OGY0OGMzMDcxMzg4ZTAiLCJhIjp7ImV4cF9BIjoidmFyXzMifSwieCI6WyJleHBfQSJdfQ.5KYsBwHjoV5TejlNQLUljg; Path=/; Max-Age=15552000; SameSite=Lax; HttpOnly; Secure"
+        ],
+        "exposures": [
+          {
+            "type": "exposure",
+            "experimentId": "exp_A",
+            "variantId": "var_3",
+            "visitorId": "dbf81dd972452160e2db80fdbb9c185b"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no cookie over IPv6: the address's /64 network",
+      "productKey": "pro",
+      "headers": {
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        "x-real-ip": "2001:db8:5:6:7:8:9:a"
+      },
+      "userId": null,
+      "errors": [],
+      "expect": {
+        "price": 2900,
+        "currency": "usd",
+        "country": null,
+        "regional": false,
+        "isFallback": false,
+        "reason": "experiment",
+        "experimentId": "exp_A",
+        "variantId": "var_2",
+        "visitorId": "de612d42a6917133017f10bf8b506d37",
+        "metadata": {
+          "pp_exp": "exp_A",
+          "pp_var": "var_2",
+          "pp_vid": "de612d42a6917133017f10bf8b506d37",
+          "pp_sig": "e5d328588f18b17c"
+        },
+        "checkoutUrl": "https://buy.example.com/pro-29",
+        "exposureLogged": true,
+        "setCookie": [
+          "__pp=eyJ2IjoiODJiNThkZWE0MjhjYzJkMjk0OWI1NmYzMDUxYTg5NjEiLCJhIjp7ImV4cF9BIjoidmFyXzIifSwieCI6WyJleHBfQSJdfQ.dRXi8ghhdv9048fHytcEHQ; Path=/; Max-Age=15552000; SameSite=Lax; HttpOnly; Secure"
+        ],
+        "exposures": [
+          {
+            "type": "exposure",
+            "experimentId": "exp_A",
+            "variantId": "var_2",
+            "visitorId": "de612d42a6917133017f10bf8b506d37"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no cookie and no languages: an empty line in their place",
+      "productKey": "pro",
+      "headers": {
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        "cf-connecting-ip": "203.0.113.7"
+      },
+      "userId": null,
+      "errors": [],
+      "expect": {
+        "price": 1900,
+        "currency": "usd",
+        "country": null,
+        "regional": false,
+        "isFallback": false,
+        "reason": "experiment",
+        "experimentId": "exp_A",
+        "variantId": "var_1",
+        "visitorId": "1c8f48895ae8f3e9b0e06d10f848ca7f",
+        "metadata": {
+          "pp_exp": "exp_A",
+          "pp_var": "var_1",
+          "pp_vid": "1c8f48895ae8f3e9b0e06d10f848ca7f",
+          "pp_sig": "1458e87f9db3023e"
+        },
+        "checkoutUrl": "https://buy.example.com/pro",
+        "exposureLogged": true,
+        "setCookie": [
+          "__pp=eyJ2IjoiOWIxMjUwNTg5MjZhMjk2MmEwYjU0NzhlYTZkZmEyZGMiLCJhIjp7ImV4cF9BIjoidmFyXzEifSwieCI6WyJleHBfQSJdfQ.Sv0hlzTJhfehJ-NWqC14lQ; Path=/; Max-Age=15552000; SameSite=Lax; HttpOnly; Secure"
+        ],
+        "exposures": [
+          {
+            "type": "exposure",
+            "experimentId": "exp_A",
+            "variantId": "var_1",
+            "visitorId": "1c8f48895ae8f3e9b0e06d10f848ca7f"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no cookie, signed-in user: the visitor id from the user id, the cookie key from the address",
+      "productKey": "pro",
+      "userId": "user_42",
+      "headers": {
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        "cf-connecting-ip": "203.0.113.7"
+      },
+      "errors": [],
+      "expect": {
+        "price": 2900,
+        "currency": "usd",
+        "country": null,
+        "regional": false,
+        "isFallback": false,
+        "reason": "experiment",
+        "experimentId": "exp_A",
+        "variantId": "var_2",
+        "visitorId": "ad4f85c841e8485cc9a683a318147ba0",
+        "metadata": {
+          "pp_exp": "exp_A",
+          "pp_var": "var_2",
+          "pp_vid": "ad4f85c841e8485cc9a683a318147ba0",
+          "pp_sig": "0aa59b0eb7615ea4"
+        },
+        "checkoutUrl": "https://buy.example.com/pro-29",
+        "exposureLogged": true,
+        "setCookie": [
+          "__pp=eyJ2IjoiOWIxMjUwNTg5MjZhMjk2MmEwYjU0NzhlYTZkZmEyZGMiLCJhIjp7ImV4cF9BIjoidmFyXzIifSwieCI6WyJleHBfQSJdfQ.OVlE-8loXZQU9IVW0qjxew; Path=/; Max-Age=15552000; SameSite=Lax; HttpOnly; Secure"
+        ],
+        "exposures": [
+          {
+            "type": "exposure",
+            "experimentId": "exp_A",
+            "variantId": "var_2",
+            "visitorId": "ad4f85c841e8485cc9a683a318147ba0"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a cookie wins over the address",
+      "productKey": "pro",
+      "headers": {
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        "cookie": "__pp=eyJ2IjoiMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYiLCJhIjp7ImV4cF9BIjoidmFyXzMifSwieCI6WyJleHBfQSJdfQ.wlG8g6VEGHFiJU1qrpwGbA",
+        "cf-connecting-ip": "203.0.113.7"
+      },
+      "userId": null,
+      "errors": [],
+      "expect": {
+        "price": 3900,
+        "currency": "usd",
+        "country": null,
+        "regional": false,
+        "isFallback": false,
+        "reason": "experiment",
+        "experimentId": "exp_A",
+        "variantId": "var_3",
+        "visitorId": "5bf855d3b3ecf62920a17dfc2a065aac",
+        "metadata": {
+          "pp_exp": "exp_A",
+          "pp_var": "var_3",
+          "pp_vid": "5bf855d3b3ecf62920a17dfc2a065aac",
+          "pp_sig": "daa0a5cba34755d8"
+        },
+        "checkoutUrl": "https://buy.example.com/pro",
+        "exposureLogged": true,
+        "setCookie": [],
+        "exposures": []
+      }
     }
-  ]
+  ],
+  "countryHeaderNames": [
+    {
+      "name": "cf-ipcountry",
+      "allowed": true
+    },
+    {
+      "name": "CF-IPCountry",
+      "allowed": true
+    },
+    {
+      "name": "x-vercel-ip-country",
+      "allowed": true
+    },
+    {
+      "name": "cloudfront-viewer-country",
+      "allowed": true
+    },
+    {
+      "name": "x-geo-country",
+      "allowed": true
+    },
+    {
+      "name": "x-country",
+      "allowed": true
+    },
+    {
+      "name": "x-forwarded",
+      "allowed": true
+    },
+    {
+      "name": "secret-country",
+      "allowed": true
+    },
+    {
+      "name": "accept-language",
+      "allowed": false
+    },
+    {
+      "name": "Accept-Language",
+      "allowed": false
+    },
+    {
+      "name": "accept",
+      "allowed": false
+    },
+    {
+      "name": "acceptx",
+      "allowed": false
+    },
+    {
+      "name": "content-language",
+      "allowed": false
+    },
+    {
+      "name": "sec-ch-ua",
+      "allowed": false
+    },
+    {
+      "name": "Sec-Fetch-Site",
+      "allowed": false
+    },
+    {
+      "name": "x-forwarded-for",
+      "allowed": false
+    },
+    {
+      "name": "X-Forwarded-Host",
+      "allowed": false
+    },
+    {
+      "name": "x-real-ip",
+      "allowed": false
+    },
+    {
+      "name": "forwarded",
+      "allowed": false
+    },
+    {
+      "name": "via",
+      "allowed": false
+    },
+    {
+      "name": "user-agent",
+      "allowed": false
+    },
+    {
+      "name": "cookie",
+      "allowed": false
+    },
+    {
+      "name": "referer",
+      "allowed": false
+    },
+    {
+      "name": "origin",
+      "allowed": false
+    },
+    {
+      "name": "host",
+      "allowed": false
+    },
+    {
+      "name": "dnt",
+      "allowed": false
+    },
+    {
+      "name": "te",
+      "allowed": false
+    },
+    {
+      "name": "priority",
+      "allowed": false
+    },
+    {
+      "name": "purpose",
+      "allowed": false
+    },
+    {
+      "name": "if-none-match",
+      "allowed": false
+    },
+    {
+      "name": "proxy-authorization",
+      "allowed": false
+    },
+    {
+      "name": "authorization",
+      "allowed": false
+    },
+    {
+      "name": "cache-control",
+      "allowed": false
+    },
+    {
+      "name": "pragma",
+      "allowed": false
+    },
+    {
+      "name": "range",
+      "allowed": false
+    },
+    {
+      "name": "connection",
+      "allowed": false
+    },
+    {
+      "name": "upgrade-insecure-requests",
+      "allowed": false
+    },
+    {
+      "name": "x-requested-with",
+      "allowed": false
+    }
+  ],
+  "addresses": [
+    {
+      "value": "203.0.113.7",
+      "address": "203.0.113.7"
+    },
+    {
+      "value": " 203.0.113.7\t",
+      "address": "203.0.113.7"
+    },
+    {
+      "value": "203.0.113.7:51234",
+      "address": "203.0.113.7"
+    },
+    {
+      "value": "1.2.3.4%eth0",
+      "address": "1.2.3.4"
+    },
+    {
+      "value": "0.0.0.0",
+      "address": "0.0.0.0"
+    },
+    {
+      "value": "255.255.255.255",
+      "address": "255.255.255.255"
+    },
+    {
+      "value": "256.1.1.1",
+      "address": null
+    },
+    {
+      "value": "203.0.113.07",
+      "address": null
+    },
+    {
+      "value": "203.0.113",
+      "address": null
+    },
+    {
+      "value": "203.0.113.7.1",
+      "address": null
+    },
+    {
+      "value": "1.2.3.4:",
+      "address": null
+    },
+    {
+      "value": "2001:db8:1:2:3:4:5:6",
+      "address": "2001:db8:1:2"
+    },
+    {
+      "value": "2001:0DB8:0001:0002::1",
+      "address": "2001:db8:1:2"
+    },
+    {
+      "value": "2001:db8::1",
+      "address": "2001:db8:0:0"
+    },
+    {
+      "value": "[2001:db8:1:2::1]:443",
+      "address": "2001:db8:1:2"
+    },
+    {
+      "value": "[2001:db8:1:2::1]",
+      "address": "2001:db8:1:2"
+    },
+    {
+      "value": "fe80::1%eth0",
+      "address": "fe80:0:0:0"
+    },
+    {
+      "value": "::1",
+      "address": "0:0:0:0"
+    },
+    {
+      "value": "::",
+      "address": "0:0:0:0"
+    },
+    {
+      "value": "1:2:3:4:5:6:7::",
+      "address": "1:2:3:4"
+    },
+    {
+      "value": "::1:2:3:4:5:6:7",
+      "address": "0:1:2:3"
+    },
+    {
+      "value": "::ffff:203.0.113.7",
+      "address": "203.0.113.7"
+    },
+    {
+      "value": "::FFFF:cb00:7107",
+      "address": "203.0.113.7"
+    },
+    {
+      "value": "64:ff9b::203.0.113.7",
+      "address": "64:ff9b:0:0"
+    },
+    {
+      "value": "1:2:3:4:5:6:1.2.3.4",
+      "address": "1:2:3:4"
+    },
+    {
+      "value": "1:2:3:4:5:6:7:8:9",
+      "address": null
+    },
+    {
+      "value": "1::2::3",
+      "address": null
+    },
+    {
+      "value": "12345::1",
+      "address": null
+    },
+    {
+      "value": "2001:db8:1:2::g",
+      "address": null
+    },
+    {
+      "value": ":1:2:3:4:5:6:7",
+      "address": null
+    },
+    {
+      "value": "1:2:3:4:5:6:7:",
+      "address": null
+    },
+    {
+      "value": "[2001:db8::1",
+      "address": null
+    },
+    {
+      "value": "[2001:db8::1]:x",
+      "address": null
+    },
+    {
+      "value": "unknown",
+      "address": null
+    },
+    {
+      "value": "",
+      "address": null
+    },
+    {
+      "value": null,
+      "address": null
+    },
+    {
+      "value": 5,
+      "address": null
+    }
+  ],
+  "clientAddresses": [
+    {
+      "headers": {
+        "cf-connecting-ip": "203.0.113.7",
+        "x-forwarded-for": "198.51.100.1"
+      },
+      "address": "203.0.113.7"
+    },
+    {
+      "headers": {
+        "true-client-ip": "2001:db8:a:b::1"
+      },
+      "address": "2001:db8:a:b"
+    },
+    {
+      "headers": {
+        "fastly-client-ip": "203.0.113.8"
+      },
+      "address": "203.0.113.8"
+    },
+    {
+      "headers": {
+        "fly-client-ip": "203.0.113.9"
+      },
+      "address": "203.0.113.9"
+    },
+    {
+      "headers": {
+        "X-Real-IP": "198.51.100.9"
+      },
+      "address": "198.51.100.9"
+    },
+    {
+      "headers": {
+        "x-forwarded-for": "198.51.100.1, 10.0.0.1"
+      },
+      "address": "198.51.100.1"
+    },
+    {
+      "headers": {
+        "cf-connecting-ip": "garbage",
+        "x-real-ip": "198.51.100.9"
+      },
+      "address": "198.51.100.9"
+    },
+    {
+      "headers": {
+        "x-forwarded-for": "unknown, 198.51.100.1"
+      },
+      "address": null
+    },
+    {
+      "headers": {
+        "x-forwarded-for": "unknown"
+      },
+      "remoteAddress": "10.0.0.2",
+      "address": "10.0.0.2"
+    },
+    {
+      "headers": {},
+      "remoteAddress": "::ffff:10.1.2.3",
+      "address": "10.1.2.3"
+    },
+    {
+      "headers": {},
+      "remoteAddress": "[::1]:5000",
+      "address": "0:0:0:0"
+    },
+    {
+      "headers": {},
+      "address": null
+    }
+  ],
+  "anonVisitors": [
+    {
+      "address": "203.0.113.7",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+      "acceptLanguage": "en-US,en;q=0.9",
+      "message": "pp:anon:v1:203.0.113.7\nMozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36\nen-US,en;q=0.9",
+      "v": "d71c50b2b68f4a46eeec0b0fa4d5c67b"
+    },
+    {
+      "address": "203.0.113.7",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+      "acceptLanguage": "",
+      "message": "pp:anon:v1:203.0.113.7\nMozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36\n",
+      "v": "9b125058926a2962a0b5478ea6dfa2dc"
+    },
+    {
+      "address": "2001:db8:1:2",
+      "userAgent": "",
+      "acceptLanguage": "de-DE",
+      "message": "pp:anon:v1:2001:db8:1:2\n\nde-DE",
+      "v": "044049c574fb056e9c92490e00c9a6a7"
+    },
+    {
+      "address": "203.0.113.7",
+      "userAgent": "Mozilla/5.0 (\u00fcn\u00efcode)",
+      "acceptLanguage": "fr",
+      "message": "pp:anon:v1:203.0.113.7\nMozilla/5.0 (\u00fcn\u00efcode)\nfr",
+      "v": "443fa040d1901ef408c1259ae5905a9b"
+    }
+  ],
+  "productsHeader": [
+    {
+      "products": {
+        "pro": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        }
+      },
+      "header": "pro=usd"
+    },
+    {
+      "products": {
+        "team": {
+          "currency": "EUR",
+          "fallbackPrice": 4900
+        },
+        "pro plan": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "\u00e9t\u00e9": {
+          "currency": "usd",
+          "fallbackPrice": 900
+        }
+      },
+      "header": "%C3%A9t%C3%A9=usd, pro%20plan=usd, team=eur"
+    },
+    {
+      "products": {
+        "b-2": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "b": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "B": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "a~b.c_d": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "x/y?z": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        }
+      },
+      "header": "B=usd, a~b.c_d=usd, b=usd, b-2=usd, x%2Fy%3Fz=usd"
+    },
+    {
+      "products": {
+        "p54": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p53": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p52": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p51": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p50": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p49": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p48": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p47": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p46": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p45": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p44": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p43": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p42": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p41": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p40": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p39": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p38": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p37": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p36": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p35": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p34": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p33": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p32": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p31": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p30": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p29": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p28": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p27": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p26": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p25": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p24": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p23": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p22": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p21": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p20": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p19": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p18": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p17": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p16": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p15": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p14": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p13": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p12": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p11": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p10": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p09": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p08": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p07": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p06": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p05": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p04": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p03": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p02": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p01": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        },
+        "p00": {
+          "currency": "usd",
+          "fallbackPrice": 1900
+        }
+      },
+      "header": "p00=usd, p01=usd, p02=usd, p03=usd, p04=usd, p05=usd, p06=usd, p07=usd, p08=usd, p09=usd, p10=usd, p11=usd, p12=usd, p13=usd, p14=usd, p15=usd, p16=usd, p17=usd, p18=usd, p19=usd, p20=usd, p21=usd, p22=usd, p23=usd, p24=usd, p25=usd, p26=usd, p27=usd, p28=usd, p29=usd, p30=usd, p31=usd, p32=usd, p33=usd, p34=usd, p35=usd, p36=usd, p37=usd, p38=usd, p39=usd, p40=usd, p41=usd, p42=usd, p43=usd, p44=usd, p45=usd, p46=usd, p47=usd, p48=usd, p49=usd"
+    },
+    {
+      "products": {},
+      "header": ""
+    }
+  ],
+  "countryHold": {
+    "config": {
+      "payload": "eyJzY2hlbWEiOjIsInByb2plY3RJZCI6InByb2pfY29uZm9ybWFuY2UiLCJ2ZXJzaW9uIjo1LCJpc3N1ZWRBdCI6MTc5OTk5OTk0MDAwMCwiZXhwaXJlc0F0Ijo0MTAyNDQ0ODAwMDAwLCJhc3NpZ25tZW50S2V5IjoiQmtCcE5CUmhwYzRqdVVwYllzZzhSemNwWFZMTlJ2OVZsZ2YyYzNFOVRfQSIsImtleUZpbmdlcnByaW50cyI6WyIwMDAwMDAwMGRlYWRiZWVmIiwiYjg2YWMwYzkyZTRkY2JmOSJdLCJjb3VudHJ5SGVhZGVyIjoieC1nZW8tY291bnRyeSIsInByb2R1Y3RzIjp7ImdlbyI6eyJpZCI6InByb2RfaG9sZCIsImN1cnJlbmN5IjoidXNkIiwicHJpY2UiOjI5MDAsIm1pblByaWNlIjoxMDAwLCJtYXhQcmljZSI6OTkwMCwicmVnaW9ucyI6W3siY291bnRyaWVzIjpbIklOIiwiUEsiXSwiY3VycmVuY3kiOiJ1c2QiLCJwcmljZSI6MTIwMCwibGV2ZWwiOjQxMzh9LHsiY291bnRyaWVzIjpbIkJSIl0sImN1cnJlbmN5IjoiYnJsIiwicHJpY2UiOjQ5OTAsImxldmVsIjo1OTAwfSx7ImNvdW50cmllcyI6WyJDSCIsIk5PIl0sImN1cnJlbmN5IjoidXNkIiwicHJpY2UiOjM1MDAsImxldmVsIjoxMjA2OX0seyJjb3VudHJpZXMiOlsiTVgiXSwiY3VycmVuY3kiOiJ1c2QiLCJwcmljZSI6MTkwMH1dLCJleHBlcmltZW50IjpudWxsfSwiZ2VvdGVzdCI6eyJpZCI6InByb2RfaG9sZF90ZXN0IiwiY3VycmVuY3kiOiJ1c2QiLCJwcmljZSI6MjkwMCwibWluUHJpY2UiOjEwMDAsIm1heFByaWNlIjo5OTAwLCJyZWdpb25zIjpbeyJjb3VudHJpZXMiOlsiSU4iXSwiY3VycmVuY3kiOiJ1c2QiLCJwcmljZSI6MTIwMCwibGV2ZWwiOjQxMzh9XSwiZXhwZXJpbWVudCI6eyJpZCI6ImV4cF9IIiwic2FsdCI6ImhvbGQiLCJ2YXJpYW50cyI6W3siaWQiOiJ2YXJfaDEiLCJwcmljZSI6MTkwMCwid2VpZ2h0Ijo1MDAwLCJyZWdpb25hbCI6WzgwMF19LHsiaWQiOiJ2YXJfaDIiLCJwcmljZSI6MzkwMCwid2VpZ2h0Ijo1MDAwLCJyZWdpb25hbCI6WzE2MDBdfV19fSwicGxhaW4iOnsiaWQiOiJwcm9kX3BsYWluIiwiY3VycmVuY3kiOiJ1c2QiLCJwcmljZSI6OTAwLCJtaW5QcmljZSI6NTAwLCJtYXhQcmljZSI6MTUwMCwiZXhwZXJpbWVudCI6bnVsbH19LCJjb3VudHJ5SG9sZCI6NjA0ODAwfQ",
+      "signature": "hM4wCwMY42uF3mdehWpMO5wUpiCjIBoz-z7RsZ4TO_rpyHMvQfbMS7knPZwUCp_tmjepRTvUXhg7ix6Bf7IHCQ",
+      "keyId": "k1",
+      "keyset": {
+        "payload": "eyJzY2hlbWEiOjEsInZlcnNpb24iOjEsImlzc3VlZEF0IjoxNzk5OTEzNjAwMDAwLCJleHBpcmVzQXQiOm51bGwsImtleXMiOlt7ImlkIjoiazEiLCJwdWJsaWNLZXkiOiI3VWtveGlqUndzYnE2UU00a0ZtVllTbFpKenBjWV9rMk5zRkdGS3lITjlFIn1dfQ",
+        "signature": "0lqffTrq5uo3TEXIfn9BmlikHT0vnVKOkZbCpaOrlgTl-Z9dzd-qegsmG2Ewm_Ng5vnQyBcJAAh12fiGh3ZgAw",
+        "rootKeyId": "r1"
+      }
+    },
+    "guards": {
+      "geo": {
+        "currency": "usd",
+        "fallbackPrice": 2900
+      },
+      "geotest": {
+        "currency": "usd",
+        "fallbackPrice": 2900
+      },
+      "plain": {
+        "currency": "usd",
+        "fallbackPrice": 900
+      }
+    },
+    "visitor": "00112233445566778899aabbccddeeff",
+    "cases": [
+      {
+        "name": "a first visit from the US holds the US",
+        "productKey": "geo",
+        "country": "US",
+        "cookie": null,
+        "expect": {
+          "price": 2900,
+          "currency": "usd",
+          "country": "US",
+          "regional": false,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": {
+            "c": "US",
+            "t": "fresh",
+            "a": []
+          }
+        }
+      },
+      {
+        "name": "a first visit from India holds India",
+        "productKey": "geo",
+        "country": "IN",
+        "cookie": null,
+        "expect": {
+          "price": 1200,
+          "currency": "usd",
+          "country": "IN",
+          "regional": true,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": {
+            "c": "IN",
+            "t": "fresh",
+            "a": []
+          }
+        }
+      },
+      {
+        "name": "a VPN to India keeps the US price",
+        "productKey": "geo",
+        "country": "IN",
+        "cookie": {
+          "c": "US",
+          "age": 3600
+        },
+        "expect": {
+          "price": 2900,
+          "currency": "usd",
+          "country": "US",
+          "regional": false,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": null
+        }
+      },
+      {
+        "name": "the hold lasts countryHold seconds",
+        "productKey": "geo",
+        "country": "IN",
+        "cookie": {
+          "c": "US",
+          "age": 604740
+        },
+        "expect": {
+          "price": 2900,
+          "currency": "usd",
+          "country": "US",
+          "regional": false,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": null
+        }
+      },
+      {
+        "name": "after the hold, priced where they are and held there",
+        "productKey": "geo",
+        "country": "IN",
+        "cookie": {
+          "c": "US",
+          "age": 604800
+        },
+        "expect": {
+          "price": 1200,
+          "currency": "usd",
+          "country": "IN",
+          "regional": true,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": {
+            "c": "IN",
+            "t": "fresh",
+            "a": []
+          }
+        }
+      },
+      {
+        "name": "a dearer country moves the hold",
+        "productKey": "geo",
+        "country": "US",
+        "cookie": {
+          "c": "IN",
+          "age": 3600
+        },
+        "expect": {
+          "price": 2900,
+          "currency": "usd",
+          "country": "US",
+          "regional": false,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": {
+            "c": "US",
+            "t": "fresh",
+            "a": []
+          }
+        }
+      },
+      {
+        "name": "the same country: nothing to set",
+        "productKey": "geo",
+        "country": "IN",
+        "cookie": {
+          "c": "IN",
+          "age": 60
+        },
+        "expect": {
+          "price": 1200,
+          "currency": "usd",
+          "country": "IN",
+          "regional": true,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": null
+        }
+      },
+      {
+        "name": "a country that pays more than the standard price is kept on a trip to the US",
+        "productKey": "geo",
+        "country": "US",
+        "cookie": {
+          "c": "CH",
+          "age": 60
+        },
+        "expect": {
+          "price": 3500,
+          "currency": "usd",
+          "country": "CH",
+          "regional": true,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": null
+        }
+      },
+      {
+        "name": "two countries of one region pay the same: the hold moves",
+        "productKey": "geo",
+        "country": "PK",
+        "cookie": {
+          "c": "IN",
+          "age": 60
+        },
+        "expect": {
+          "price": 1200,
+          "currency": "usd",
+          "country": "PK",
+          "regional": true,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": {
+            "c": "PK",
+            "t": "fresh",
+            "a": []
+          }
+        }
+      },
+      {
+        "name": "unknown country: a held cheaper country is not used",
+        "productKey": "geo",
+        "cookie": {
+          "c": "IN",
+          "age": 60
+        },
+        "expect": {
+          "price": 2900,
+          "currency": "usd",
+          "country": null,
+          "regional": false,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": null
+        }
+      },
+      {
+        "name": "unknown country: a held dearer country is kept",
+        "productKey": "geo",
+        "cookie": {
+          "c": "CH",
+          "age": 60
+        },
+        "expect": {
+          "price": 3500,
+          "currency": "usd",
+          "country": "CH",
+          "regional": true,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": null
+        }
+      },
+      {
+        "name": "no country and no cookie: nothing to hold",
+        "productKey": "geo",
+        "cookie": null,
+        "expect": {
+          "price": 2900,
+          "currency": "usd",
+          "country": null,
+          "regional": false,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": null
+        }
+      },
+      {
+        "name": "a region in another currency compares as what is served: the standard price",
+        "productKey": "geo",
+        "country": "IN",
+        "cookie": {
+          "c": "BR",
+          "age": 60
+        },
+        "localCurrencies": false,
+        "expect": {
+          "price": 2900,
+          "currency": "usd",
+          "country": "BR",
+          "regional": false,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": null
+        }
+      },
+      {
+        "name": "with localCurrencies, the held region's own price",
+        "productKey": "geo",
+        "country": "IN",
+        "cookie": {
+          "c": "BR",
+          "age": 60
+        },
+        "localCurrencies": true,
+        "expect": {
+          "price": 4990,
+          "currency": "brl",
+          "country": "BR",
+          "regional": true,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": null
+        }
+      },
+      {
+        "name": "a region without a level compares as the standard price",
+        "productKey": "geo",
+        "country": "MX",
+        "cookie": {
+          "c": "US",
+          "age": 60
+        },
+        "expect": {
+          "price": 1900,
+          "currency": "usd",
+          "country": "MX",
+          "regional": true,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": {
+            "c": "MX",
+            "t": "fresh",
+            "a": []
+          }
+        }
+      },
+      {
+        "name": "a held country that is not two capital letters is no hold",
+        "productKey": "geo",
+        "country": "IN",
+        "cookie": {
+          "c": "us",
+          "age": 60
+        },
+        "expect": {
+          "price": 1200,
+          "currency": "usd",
+          "country": "IN",
+          "regional": true,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": {
+            "c": "IN",
+            "t": "fresh",
+            "a": []
+          }
+        }
+      },
+      {
+        "name": "a hold stamped in the future (clock skew) still holds",
+        "productKey": "geo",
+        "country": "IN",
+        "cookie": {
+          "c": "US",
+          "age": -3600
+        },
+        "expect": {
+          "price": 2900,
+          "currency": "usd",
+          "country": "US",
+          "regional": false,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": null
+        }
+      },
+      {
+        "name": "a product without regional prices holds nothing and sets no cookie",
+        "productKey": "plain",
+        "country": "US",
+        "cookie": null,
+        "expect": {
+          "price": 900,
+          "currency": "usd",
+          "country": "US",
+          "regional": false,
+          "reason": "base_price",
+          "variantId": null,
+          "exposures": [],
+          "cookie": null
+        }
+      },
+      {
+        "name": "in a test: the variant sticks at the held country's price and counts there",
+        "productKey": "geotest",
+        "country": "IN",
+        "cookie": {
+          "c": "US",
+          "age": 60,
+          "a": [
+            [
+              "exp_H",
+              "var_h2"
+            ]
+          ]
+        },
+        "expect": {
+          "price": 3900,
+          "currency": "usd",
+          "country": "US",
+          "regional": false,
+          "reason": "experiment",
+          "variantId": "var_h2",
+          "exposures": [
+            {
+              "type": "exposure",
+              "experimentId": "exp_H",
+              "variantId": "var_h2",
+              "country": "US"
+            }
+          ],
+          "cookie": {
+            "c": "US",
+            "t": "kept",
+            "a": [
+              [
+                "exp_H",
+                "var_h2"
+              ]
+            ]
+          }
+        }
+      },
+      {
+        "name": "in a test, held in India: the variant's regional price",
+        "productKey": "geotest",
+        "country": "IN",
+        "cookie": {
+          "c": "IN",
+          "age": 60,
+          "a": [
+            [
+              "exp_H",
+              "var_h1"
+            ]
+          ],
+          "x": [
+            "exp_H"
+          ]
+        },
+        "expect": {
+          "price": 800,
+          "currency": "usd",
+          "country": "IN",
+          "regional": true,
+          "reason": "experiment",
+          "variantId": "var_h1",
+          "exposures": [],
+          "cookie": null
+        }
+      }
+    ]
+  }
 }

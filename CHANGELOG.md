@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.1 (2026-11-18)
+
+- VPN guard: a visitor keeps the price of a country that pays more, where they were seen in the last 7 days, so a VPN
+  to a cheaper country no longer lowers the price. A visitor who moves to a dearer country pays its price from then
+  on. The held country is `quote.country` and lives in the signed `__pp` cookie, which a regional product now sets
+  even without a test. Turned on by the signed config; older SDKs ignore it.
+- A visitor who refuses cookies keeps one price and counts once: without a cookie, the visitor is keyed by an HMAC of
+  their IP address (IPv6 by its /64), browser and languages, made with the project's secret. Neither leaves your
+  server.
+- `country_header:` naming a header every browser sends (`Accept-Language`, `X-Forwarded-For`…) is ignored and
+  reported to `on_error`, and such a header in the project settings is never read: visitors can no longer pick their
+  own country.
+- Every config request says which products your code prices (`Leverprice-Products`) and why the last config was
+  refused, if it was (`Leverprice-Config-Error`), so the dashboard's Setup page turns green only when visitors get
+  real prices and otherwise says what to fix. A refused config reaches `on_error` as `Leverprice::ConfigError`, whose
+  `code` says why.
+- A cold start no longer gives up early: each request waits its own `timeout_ms:` for the first config, even when
+  `preload` in another thread or another request started the fetch earlier. Before, a busy server answered the first
+  visitors with the fallback early, said nothing, and pinned them to it for 30 minutes. A request that does give up
+  now reports `Leverprice config: still loading after 500 ms (timeout_ms); …` to `on_error`, once per fetch.
+
 ## 0.4.0 (2026-11-18)
 
 - Settings live in Leverprice, not in code: the product's price range and the header that carries the visitor's

@@ -3,6 +3,17 @@
 require "set"
 
 module Leverprice
+  # A refused config. `code` says why ("malformed", "untrusted", "bad_signature", "expired", "wrong_key",
+  # "wrong_project" or "rollback") and is reported to Leverprice with the next config request.
+  class ConfigError < Error
+    attr_reader :code
+
+    def initialize(code, message)
+      super(message)
+      @code = code
+    end
+  end
+
   # @api private
   module Wire
     PROTOCOL_VERSION = 2
@@ -12,6 +23,9 @@ module Leverprice
     MAX_REGIONS = 300
     MAX_SPLITS = 300
     MAX_SCOPE = 300
+    # The level of a country without a regional price: the standard price.
+    STANDARD_LEVEL = 10_000
+    MAX_COUNTRY_HOLD = 90 * 86_400
     PROVIDERS = %w[stripe polar lemonsqueezy dodo paddle creem other].freeze
     FINGERPRINT_RE = /\A[0-9a-f]{16}\z/
     SIGNATURE_RE = /\A[0-9a-f]{16}\z/
@@ -23,11 +37,13 @@ module Leverprice
 
     Variant = Struct.new(:id, :price, :weight, :checkout_url, :regional, keyword_init: true)
     Experiment = Struct.new(:id, :salt, :variants, :scope, :split_of, keyword_init: true)
-    Region = Struct.new(:countries, :currency, :price, keyword_init: true)
+    # `level`: the price as basis points of the standard price (10000 = the same), to compare countries.
+    Region = Struct.new(:countries, :currency, :price, :level, keyword_init: true)
     Product = Struct.new(:id, :currency, :price, :min_price, :max_price, :checkout_url, :regions, :region_of,
                          :experiment, keyword_init: true)
+    # `country_hold`: seconds a visitor keeps the price of a dearer country they were seen in; 0 is off.
     Config = Struct.new(:project_id, :version, :issued_at, :expires_at, :assignment_key, :key_fingerprints,
-                        :country_header, :products, keyword_init: true)
+                        :country_header, :country_hold, :products, keyword_init: true)
 
     module_function
 
@@ -78,13 +94,22 @@ module Leverprice
         assignment_key: assignment_key,
         key_fingerprints: fingerprints,
         country_header: header_name(raw["countryHeader"]),
+        country_hold: country_hold(raw["countryHold"]),
         products: parsed
       )
       [config, dropped]
     end
 
+    # A header visitors send themselves would let them pick their own price: never read.
     def header_name(value)
-      Util.str_match?(HEADER_NAME_RE, value) ? value.downcase(:ascii) : nil
+      return nil unless Util.str_match?(HEADER_NAME_RE, value) && !Request.visitor_set_header?(value)
+
+      value.downcase(:ascii)
+    end
+
+    def country_hold(value)
+      seconds = Util.safe_int(value)
+      seconds&.positive? && seconds <= MAX_COUNTRY_HOLD ? seconds : 0
     end
 
     def parse_product(raw)
@@ -137,7 +162,10 @@ module Leverprice
         price = Util.safe_int(region["price"])
         return nil unless Util.str_match?(CURRENCY_RE, currency) && price&.positive?
 
-        Region.new(countries: region["countries"], currency: currency.downcase, price: price)
+        # A level this SDK can't read compares as the standard price: it never holds a price.
+        level = Util.safe_int(region["level"])
+        Region.new(countries: region["countries"], currency: currency.downcase, price: price,
+                   level: level&.positive? ? level : STANDARD_LEVEL)
       end
     end
 

@@ -105,7 +105,36 @@ class ClientTest < Minitest::Test
     assert_equal "no_config", late_quote.reason
     assert_operator first_done - started, :>=, 0.38
     assert_operator first_done - started, :<, 1.5
-    assert_operator late_done - late_started, :<, 0.38
+    assert_operator late_done - late_started, :>=, 0.38
+    assert_operator late_done - late_started, :<, 1.5
+    assert_equal 1, transport.config_calls.size
+    slow = "Leverprice config: still loading after 400 ms (timeout_ms); serving fallback prices until it arrives"
+
+    assert_equal [slow], errors
+  ensure
+    release&.close
+  end
+
+  def test_cold_start_wait_is_not_shortened_by_preload
+    release = Queue.new
+    envelope = @envelope
+    transport = FakeTransport.new(config: lambda { |_call|
+      release.pop
+      [200, { "ETag" => '"v1"' }, JSON.generate(envelope)]
+    })
+    client = build_client(transport: transport, timeout_ms: 400)
+    Thread.new { client.preload } # started at boot, not awaited
+    sleep 0.25
+    # The config arrives 450 ms after preload started, 200 ms into this request's own wait.
+    Thread.new do
+      sleep 0.2
+      release << true
+    end
+    quote = client.get_price("pro", request: browser)
+
+    refute_predicate quote, :fallback?
+    refute_equal "no_config", quote.reason
+    assert_empty errors
     assert_equal 1, transport.config_calls.size
   ensure
     release&.close
@@ -495,14 +524,14 @@ class ClientTest < Minitest::Test
     assert_equal "GET", config_call.http_method
     assert_equal "https://api.example.test/v1/config", config_call.url
     assert_equal "Bearer #{SECRET_KEY}", config_call.headers["Authorization"]
-    assert_equal "leverprice-sdk-ruby/0.4.0", config_call.headers["User-Agent"]
+    assert_equal "leverprice-sdk-ruby/0.4.1", config_call.headers["User-Agent"]
     refute(transport.calls.any? { |c| c.headers.keys.any? { |k| k.casecmp?("origin") } })
 
     events_call = transport.event_calls.first
 
     assert_equal "POST", events_call.http_method
     assert_equal "application/json", events_call.headers["Content-Type"]
-    assert_equal({ "name" => "leverprice-ruby", "version" => "0.4.0" }, JSON.parse(events_call.body)["sdk"])
+    assert_equal({ "name" => "leverprice-ruby", "version" => "0.4.1" }, JSON.parse(events_call.body)["sdk"])
   end
 
   def test_transport_failures_and_bad_bodies_fall_back
@@ -695,7 +724,7 @@ class ClientTest < Minitest::Test
     assert_equal "x-geo-country", parsed.call(countryHeader: "X-Geo-Country")
     assert_nil parsed.call
     [nil, 42, ["cf-ipcountry"], "", " cf-ipcountry", "cf-ipcountry\n", "cf\nipcountry", "cf ipcountry",
-     "\u212Aey"].each do |value|
+     "\u212Aey", "Accept-Language", "x-forwarded-for", "X-Real-IP"].each do |value|
       assert_nil parsed.call(countryHeader: value), value.inspect
     end
   end
@@ -727,6 +756,123 @@ class ClientTest < Minitest::Test
 
     assert_nil country.call
     assert_equal "IN", country.call(countryHeader: "x-geo-country")
+    assert_empty errors
+  end
+
+  def test_a_country_header_that_browsers_send_is_ignored_and_reported_once
+    transport = FakeTransport.serving(@signer.envelope(products: Signer.regional_products))
+    %w[Accept-Language x-forwarded-for X-Real-IP sec-ch-ua user-agent].each do |name|
+      errors.clear
+      client = build_client(transport: transport, country_header: name)
+
+      assert_equal 1, errors.size, name
+      assert_equal %(Leverprice: country_header "#{name.downcase}" is sent by visitors' browsers, so it would let ) +
+                   "them pick their own price; it is ignored. Name the header your CDN or host sets, such as " \
+                   "cf-ipcountry.", errors.first
+      assert_nil client.get_price("basic", request: browser(name => "IN")).country, name
+      assert_equal 1, errors.size, name
+    end
+    errors.clear
+    %w[cf-ipcountry x-vercel-ip-country x-geo-country].each do |name|
+      build_client(transport: transport, country_header: name)
+    end
+    build_client(transport: transport, country_header: "accept-language", disabled: true)
+    with_env("LEVERPRICE_DISABLED", "1") { build_client(transport: transport, country_header: "accept-language") }
+
+    assert_empty errors
+  end
+
+  def test_every_config_request_names_the_products_in_code
+    transport = FakeTransport.new
+    products = {
+      "team" => { currency: "EUR", fallback_price: 4900 },
+      "pro plan" => { currency: "usd", fallback_price: 1900 },
+      "\u00e9t\u00e9" => { currency: "usd", fallback_price: 900 }
+    }
+    client = build_client(transport: transport, products: products)
+    client.refresh
+    client.refresh
+
+    assert_equal 2, transport.config_calls.size
+    transport.config_calls.each do |call|
+      assert_equal "%C3%A9t%C3%A9=usd, pro%20plan=usd, team=eur", call.headers["Leverprice-Products"]
+      refute call.headers.key?("Leverprice-Config-Error") # an outage is not a refused config
+    end
+  end
+
+  def test_the_reason_a_config_was_refused_is_sent_until_one_is_accepted
+    other_key = @signer.envelope(secret_key: "pp_sk_test_#{"z" * 40}")
+    responses = [
+      [200, {}, "not json"],
+      [503, {}, ""],
+      [200, {}, JSON.generate(other_key)],
+      [200, { "ETag" => '"v1"' }, JSON.generate(@envelope)],
+      [200, { "ETag" => '"v1"' }, JSON.generate(@envelope)]
+    ]
+    transport = FakeTransport.new(config: ->(_call) { responses.shift })
+    client = build_client(transport: transport)
+    5.times { client.refresh }
+
+    assert_equal([nil, "malformed", "malformed", "wrong_key", nil],
+                 transport.config_calls.map { |call| call.headers["Leverprice-Config-Error"] })
+    assert_equal(["basic=usd, pro=usd, team=usd"],
+                 transport.config_calls.map { |call| call.headers["Leverprice-Products"] }.uniq)
+    assert_equal "base_price", client.get_price("basic").reason
+  end
+
+  def test_a_visitor_without_cookies_but_with_an_address_is_one_visitor
+    transport = FakeTransport.serving(@envelope)
+    client = build_client(transport: transport)
+    rack = { "REQUEST_METHOD" => "GET", "HTTP_USER_AGENT" => CHROME, "HTTP_ACCEPT_LANGUAGE" => "en-US" }
+    requests = [
+      ->(_) { browser("cf-connecting-ip" => "203.0.113.7", "accept-language" => "en-US") },
+      ->(_) { browser("x-forwarded-for" => "198.51.100.23, 10.0.0.1") },
+      ->(_) { rack.merge("REMOTE_ADDR" => "198.51.100.7") },
+      ->(index) { rack.merge("REMOTE_ADDR" => "2001:db8:1:2::#{index.to_s(16)}") } # one /64 network
+    ]
+    visitors = requests.map do |request|
+      quotes = Array.new(20) { |index| client.get_price("pro", request: request.call(index)) }
+
+      assert_equal 1, quotes.map(&:visitor_id).uniq.size
+      assert_equal 1, quotes.map(&:set_cookie).uniq.size
+      quotes.first.visitor_id
+    end
+    client.flush
+
+    assert_equal 4, visitors.uniq.size
+    assert_equal(visitors, transport.events.map { |e| e["visitorId"] })
+  end
+
+  def test_a_visitor_without_cookies_or_an_address_is_new_every_time
+    transport = FakeTransport.serving(@envelope)
+    client = build_client(transport: transport)
+    quotes = Array.new(20) { client.get_price("pro", request: browser("x-forwarded-for" => "unknown")) }
+    client.flush
+
+    assert_equal 20, quotes.map(&:visitor_id).uniq.size
+    assert_equal 20, transport.events.size
+  end
+
+  def test_quotes_of_one_request_share_the_held_country
+    products = Signer.regional_products
+    products["basic"]["regions"][1]["level"] = 5000 # pro and basic share these regions: BR and MX pay half
+    transport = FakeTransport.serving(@signer.envelope(products: products, countryHold: 604_800))
+    client = build_client(transport: transport, clock: TestClock.new)
+    home = { "REQUEST_METHOD" => "GET", "HTTP_USER_AGENT" => CHROME }
+    basic = client.get_price("basic", request: home, country: "US")
+    pro = client.get_price("pro", request: home, country: "US")
+
+    assert_equal ["US", 900, false], [basic.country, basic.price, basic.regional]
+    assert_equal ["US", 1_800_000_000], cookie_state(basic.set_cookie.first).values_at("c", "t")
+    assert_equal ["US", 1_800_000_000, { "exp_A" => pro.variant_id }],
+                 cookie_state(pro.set_cookie.first).values_at("c", "t", "a")
+
+    away = home.merge("HTTP_COOKIE" => pro.set_cookie.first.split(";").first)
+    quotes = %w[basic pro].map { |key| client.get_price(key, request: away, country: "BR") }
+
+    assert_equal([["US", 900, false, []], ["US", pro.price, false, []]],
+                 quotes.map { |quote| [quote.country, quote.price, quote.regional, quote.set_cookie] })
+    assert_equal pro.variant_id, quotes.last.variant_id
     assert_empty errors
   end
 

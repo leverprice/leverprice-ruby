@@ -29,26 +29,38 @@ module Leverprice
     def verify(envelope, now)
       unless envelope.is_a?(Hash) && envelope["payload"].is_a?(String) && envelope["signature"].is_a?(String) &&
              envelope["keyId"].is_a?(String)
-        raise Error, "Leverprice config: response is not a signed config"
+        raise ConfigError.new("malformed", "Leverprice config: response is not a signed config")
       end
 
-      keyset = verify_keyset(envelope["keyset"], now)
+      keyset = coded("untrusted") { verify_keyset(envelope["keyset"], now) }
       key_id = envelope["keyId"]
       key = keyset.keys.find { |k| k.id == key_id }
-      raise Error, %(Leverprice config: signing key "#{key_id}" is not in keyset v#{keyset.version}) unless key
+      unless key
+        raise ConfigError.new("bad_signature",
+                              %(Leverprice config: signing key "#{key_id}" is not in keyset v#{keyset.version}))
+      end
       unless Util.ed25519_verify(key.public_key, envelope["signature"], envelope["payload"])
-        raise Error, %(Leverprice config: bad signature (key "#{key_id}"))
+        raise ConfigError.new("bad_signature", %(Leverprice config: bad signature (key "#{key_id}")))
       end
 
-      config, dropped = Wire.parse_config(envelope["payload"])
+      config, dropped = coded("malformed") { Wire.parse_config(envelope["payload"]) }
       if now >= config.expires_at
-        raise Error, "Leverprice config v#{config.version}: expired at #{Util.iso_time(config.expires_at)}"
+        raise ConfigError.new("expired",
+                              "Leverprice config v#{config.version}: expired at #{Util.iso_time(config.expires_at)}")
       end
 
       Verified.new(config, SigningKey.new(key.id, key.public_key), dropped)
     end
 
     private
+
+    def coded(code)
+      yield
+    rescue ConfigError
+      raise
+    rescue StandardError => e
+      raise ConfigError.new(code, e.message)
+    end
 
     def verify_keyset(signed, now)
       unless signed.is_a?(Hash) && signed["payload"].is_a?(String) && signed["signature"].is_a?(String) &&
@@ -140,15 +152,17 @@ module Leverprice
       config = verified.config
       # A validly signed config of another project (e.g. from a compromised cache) is refused even on first load.
       unless config.key_fingerprints.include?(@fingerprint)
-        raise Error, "Leverprice config: not issued for this API key; refusing"
+        raise ConfigError.new("wrong_key", "Leverprice config: not issued for this API key; refusing")
       end
 
       current = self.config
       if current && config.project_id != current.project_id
-        raise Error, "Leverprice config: project changed from #{current.project_id} to #{config.project_id}; refusing"
+        raise ConfigError.new("wrong_project", "Leverprice config: project changed from #{current.project_id} " \
+                                               "to #{config.project_id}; refusing")
       end
       if current && config.version < current.version
-        raise Error, "Leverprice config: refusing to roll back from version #{current.version} to #{config.version}"
+        raise ConfigError.new("rollback", "Leverprice config: refusing to roll back from version " \
+                                          "#{current.version} to #{config.version}")
       end
 
       warning = nil

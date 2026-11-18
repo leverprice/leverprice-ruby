@@ -46,14 +46,14 @@ array keys where idiomatic). The concepts and defaults are identical everywhere.
 | `products` | — | Map productKey → guard `{ currency, fallbackPrice }`. Validated at construction (raise on invalid: this is merchant code). `currency` = 3 letters (stored lowercase). `fallbackPrice` = positive integer. The price range comes only from the signed config. `minPrice` and `maxPrice`, hard limits in 0.3, are still accepted so code written for 0.3 keeps compiling and running, but they are never validated and never used (typed SDKs keep them as deprecated fields). |
 | `disabled` | false | Kill switch (see section 9). |
 | `apiUrl` | `https://api.leverprice.com` | Trailing slashes stripped. |
-| `timeoutMs` | 500 | Max time a request waits for a config when none is usable. |
+| `timeoutMs` | 500 | Max time a request waits for a config when none is usable, counted from that request (section 5). |
 | `refreshIntervalMs` | 30000 | Revalidate the config this often (driven by traffic or a background worker). |
 | `maxStaleMs` | 86400000 | Stop using a config this long after the server last confirmed it. |
 | `cookieName` | `__pp` | Must match `^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$` (raise otherwise). The pin cookie is `<cookieName>_f`. |
 | `cookieMaxAgeSeconds` | 15552000 (180 days) | Assignment cookie lifetime. |
 | `cookieSecure` | true | `Secure` attribute. |
 | `cookieDomain` | none | `Domain` attribute. |
-| `countryHeader` | none | Name of the request header that carries the visitor's country (set by the merchant's CDN or host: `cf-ipcountry`, `x-vercel-ip-country`, `cloudfront-viewer-country`…). Usually left out: the project's setting arrives in the config (`countryHeader`, section 4) and this option only overrides it. ASCII whitespace stripped from both ends; empty = none; must match the same token pattern as `cookieName` (raise otherwise) and is lowercased only after that check, so case mapping never sees anything but ASCII. There is no built-in default on purpose: a header the visitor can send themselves would let them choose their price. |
+| `countryHeader` | none | Name of the request header that carries the visitor's country (set by the merchant's CDN or host: `cf-ipcountry`, `x-vercel-ip-country`, `cloudfront-viewer-country`…). Usually left out: the project's setting arrives in the config (`countryHeader`, section 4) and this option only overrides it. ASCII whitespace stripped from both ends; empty = none; must match the same token pattern as `cookieName` (raise otherwise) and is lowercased only after that check, so case mapping never sees anything but ASCII. There is no built-in default on purpose: a header the visitor can send themselves would let them choose their price. A header every browser sends itself (`visitorSetHeader`, section 7) is **ignored** as if the option were not set, and reported once through `onError` at construction (unless disabled): `Leverprice: countryHeader "<name>" is sent by visitors' browsers, so it would let them pick their own price; it is ignored. Name the header your CDN or host sets, such as cf-ipcountry.` (since 0.4.1). |
 | `localCurrencies` | false | Also serve regional prices whose currency differs from the product's `currency`. Without it, only regional prices in the product's own currency are served and other countries get the standard price, so a checkout that ignores `quote.currency` can never charge an amount in the wrong currency. Set it only when the checkout charges `quote.price` in `quote.currency`. JS: anything but `true` is false; other languages: a boolean. |
 | `flushIntervalMs` | 2000 | How long exposures may wait before being sent. |
 | `trustedRootKeys` | `ROOT_PUBLIC_KEYS` | Root public keys by id (raw Ed25519, base64url). For staging and tests. |
@@ -90,7 +90,7 @@ offer async variants where the ecosystem expects them (Python `asyncio`).
 | `productKey` | as asked |
 | `price` | integer minor units |
 | `currency` | lowercase: the merchant's guard currency, or the region's currency when `regional` is true |
-| `country` | the visitor's country (uppercase ISO 3166-1 alpha-2) when known and the reason is `experiment` or `base_price`; otherwise null |
+| `country` | the country whose price applies (uppercase ISO 3166-1 alpha-2) when known and the reason is `experiment` or `base_price`: the visitor's, or a dearer country the VPN guard holds (section 8); otherwise null |
 | `regional` | `price` is the regional price of `country` (section 8) |
 | `isFallback` | `price` is the guard's `fallbackPrice` |
 | `reason` | see the table below |
@@ -130,6 +130,14 @@ Never send `Origin`. Each request has a hard timeout of 10 s (`REQUEST_TIMEOUT_M
 
 * Request header `If-None-Match: <etag>` only when the SDK holds an ETag **and** its config is still
   usable, and the fetch is not a catch-up fetch (section 5).
+* Request header `Leverprice-Products` on **every** config request (since 0.4.1), so the dashboard
+  can tell whether visitors get real prices: one `key=currency` entry per configured product, the
+  key percent-encoded (every UTF-8 byte outside `A–Z a–z 0–9 - . _ ~` as `%XX`, uppercase hex), the
+  currency lowercase, entries sorted by encoded key (byte order), the first 50, joined with `", "`.
+  No products: an empty value. Build it once at construction (vectors: `productsHeader`).
+* Request header `Leverprice-Config-Error: <code>` while the last `200` response was refused
+  (since 0.4.1): the code of that refusal (section 4). Cleared once a config is accepted; an HTTP
+  error, a timeout or a `304` neither sets nor clears it.
 * `200`: body is a `SignedConfig` JSON envelope. Accept it (section 4), then store `ETag` and set
   `fetchedAt = now`.
 * `304` (only when `If-None-Match` was sent): set `fetchedAt = now`.
@@ -203,8 +211,10 @@ Parse the config payload (throw = reject the whole config):
 * `projectId`: non-empty string. `version`: safe integer ≥ 0. `expiresAt`: finite number.
 * `assignmentKey`: base64url string decoding to ≥ 32 bytes.
 * `countryHeader`: a string matching `^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$` (the whole string, nothing
-  trimmed) is kept, ASCII-lowercased. Absent, null or anything else means none; it never rejects
-  the config.
+  trimmed) that is not `visitorSetHeader` (section 7) is kept, ASCII-lowercased. Absent, null or
+  anything else means none; it never rejects the config.
+* `countryHold` (since 0.4.1): a safe integer `> 0` and `<= 7776000` (90 days) is the VPN guard's
+  hold in seconds (section 8); absent, 0 or anything else means 0 (off). It never rejects the config.
 * `products`: object. For each entry, parse the product; an invalid product is **dropped** (left out,
   its key added to `dropped`), the rest of the config is still used.
 
@@ -241,7 +251,9 @@ Parse a product (null = invalid):
   object with `countries` (a non-empty array of strings matching `^[A-Z]{2}$`), `currency` (string
   matching `^[A-Za-z]{3}$`, stored lowercase) and `price` (safe integer > 0). A country listed more
   than once (in two regions, or twice in one), or anything else out of shape, invalidates the
-  product. Keep the regions in order and build a map country → region index.
+  product. Keep the regions in order and build a map country → region index. `level` (since 0.4.1):
+  what the region pays as basis points of the standard price (10000 = the same), a safe integer
+  `> 0`; absent or anything else is 10000. It never invalidates the product.
 * Variant `regional`: when the product has at least one region, every variant must carry
   `regional`, an array with exactly one safe integer > 0 per region (same order); otherwise the
   product is invalid. When the product has no regions, `regional` is ignored (treated as empty).
@@ -253,6 +265,19 @@ Client-level acceptance after `verify` succeeds (reject = keep the current confi
 3. If products were dropped and the version differs from the current one, report
    `Leverprice config v<version>: ignored malformed products <a, b>`.
 4. Store the config and its signing key.
+
+Every refusal of a `200` body has a code, sent back in `Leverprice-Config-Error` (section 3; the
+`trust` vectors give it as `code`):
+
+| Code | Refusal |
+|---|---|
+| `malformed` | body not JSON; envelope not an object with string `payload`, `signature`, `keyId`; config payload that fails parsing (schema, fingerprints, assignment key…) |
+| `untrusted` | anything wrong with the keyset (step 2–3: missing, malformed, unknown or placeholder root, bad root signature, expired, below the minimum or older than `newest`) |
+| `bad_signature` | `keyId` not in the keyset, or the config signature does not verify |
+| `expired` | `now >= config.expiresAt` |
+| `wrong_key` | acceptance step 1 |
+| `wrong_project` | acceptance step 2, other `projectId` |
+| `rollback` | acceptance step 2, lower `version` |
 
 ## 5. Config lifecycle
 
@@ -266,10 +291,17 @@ State: `config`, `signingKey`, `etag`, `fetchedAt`, `inflight` (+ start time), `
   **unconditional** fetch (no `If-None-Match`). Else if not usable or
   `now - fetchedAt >= refreshIntervalMs`: start a fetch (subject to `retryAt`).
 * Starting a fetch: if one is in flight, reuse it. Unless forced, do nothing while `now < retryAt`.
-* `currentConfig()`: `kick(now)`; if usable, return it. Otherwise wait for the in-flight fetch, but
-  never longer than `timeoutMs` after **that fetch started** (so concurrent requests during a cold
-  start all give up at the same moment); then return the config if usable, else none. If no fetch is
-  in flight (backing off), return none immediately.
+* `currentConfig()`: `kick(now)`; if usable, return it. Otherwise wait for the in-flight fetch at
+  most `timeoutMs` counted from **this request** (since 0.4.1): a fetch started earlier by
+  `preload()`, a refresh, another request or another process (PHP's shared lease) never shortens the
+  wait. Then return the config if usable, else none. If the wait ran out while that fetch is still in
+  flight, report `Leverprice config: still loading after <timeoutMs> ms (<option name>); serving
+  fallback prices until it arrives` once per fetch (once per fetch and process in shared-nothing
+  PHP). A `timeoutMs` of 0 waits for nothing and reports nothing. If no fetch is in flight (backing
+  off), return none immediately.
+  Before 0.4.1 the wait ended `timeoutMs` after the fetch started: after an unawaited `preload()` at
+  boot, a busy server gave the first visitors 2–340 ms instead of 500, served them the fallback
+  with no report and pinned them to it for 30 minutes.
 * A fetch that has shown no progress for 15 s (`STALL_MS = REQUEST_TIMEOUT_MS + 5000`) is considered
   dead (an edge runtime cancelled it): start a new one.
 * `Leverprice-Config-Version` header (on any config or events response): parse as a non-negative
@@ -288,6 +320,16 @@ background worker must never keep the process alive (daemon threads) and must su
 * **Visitor key**: `u:<userId>` when a user id is given (non-empty strings as-is; safe integers in
   decimal; anything else, fractional numbers included, counts as no user id), else `a:<state.v>`
   from the cookie state.
+* **New visitor key** `v` (since 0.4.1). A browser that refuses cookies used to be a new visitor on
+  every request: a new price each time, counted again each time. Now, when the request has a client
+  address (section 7):
+  `v = hex(HMAC(key, "pp:anon:v1:" + address + "\n" + userAgent + "\n" + acceptLanguage))[0:32]`,
+  where `userAgent` is the request's User-Agent (the context's `userAgent` wins) and `acceptLanguage`
+  the raw `Accept-Language` header value, each `""` when missing. Without an address, `v` is 16 random
+  bytes as lowercase hex (cryptographically secure RNG), as before. A visitor with a valid cookie
+  keeps the cookie's `v`. Raw addresses and user agents never leave the merchant's server: only
+  the HMAC, keyed by the project's assignment key. Vectors: `anonVisitors`, and the `quotes` cases
+  that start with "no cookie".
 * **Visitor id**: `hex(HMAC(key, "pp:visitor:v1:" + visitorKey))[0:32]`.
 * **Bucket**: `SHA-256(UTF-8(salt + ":" + visitorId))`, first 4 bytes as a big-endian unsigned
   32-bit integer, modulo 10000.
@@ -301,9 +343,12 @@ background worker must never keep the process alive (daemon threads) and must su
 Value: `<body>.<sig>` where `body = b64url(UTF-8(JSON(state)))` and
 `sig = b64url(HMAC(key, "pp:cookie:v1:" + body)[0:16 bytes])` (22 characters).
 
-State: `{ "v": <32 lowercase hex>, "a": { experimentId: variantId, … }, "x": [ experimentId, … ] }`.
-`a` is **ordered** (most recent first); serialize it in that order. JSON is compact (no spaces), keys
-in the order `v`, `a`, `x`. Languages whose maps are unordered (Go) must keep `a` as an ordered list
+State: `{ "v": <32 lowercase hex>, "a": { experimentId: variantId, … }, "x": [ experimentId, … ] }`,
+plus, since 0.4.1, the VPN guard's held country `"c": <two letters A–Z>` and the second it was set
+`"t": <integer seconds since the epoch>`, both or neither. `a` is **ordered** (most recent first);
+serialize it in that order. JSON is compact (no spaces), keys in the order `v`, `a`, `x`, then `c`,
+`t` when set. An SDK before 0.4.1 drops `c` and `t` when it rewrites the cookie; that only ends the
+hold early. Languages whose maps are unordered (Go) must keep `a` as an ordered list
 of pairs and write the JSON by hand. The `sign` vectors give the exact bytes.
 
 Verifying a raw cookie value (any failure → null, never an exception):
@@ -316,7 +361,9 @@ Verifying a raw cookie value (any failure → null, never an exception):
    `a` is an object (not an array).
 4. Normalize: keep the first 10 entries of `a` (in order); of those keep pairs where the experiment id
    and the variant (a string) both match `^[A-Za-z0-9_-]{1,64}$`. `x`: if an array, keep string
-   entries that are keys of the normalized `a`, at most 10; otherwise empty.
+   entries that are keys of the normalized `a`, at most 10; otherwise empty. Keep `c` and `t` only
+   when `c` is a string matching `^[A-Z]{2}$` (whole string) and `t` a safe integer `>= 0`;
+   otherwise drop both.
 
 Operations:
 
@@ -327,8 +374,7 @@ Operations:
 * Experiment, variant and product ids issued by the server always start with a letter prefix
   (`exp_…`, `var_…`), so they are never integer-like. (JavaScript objects order integer-like keys
   first; other languages keep document order.)
-* New visitor: `v` = 16 random bytes as lowercase hex (cryptographically secure RNG), `a = {}`,
-  `x = []`.
+* New visitor: `v` = the new visitor key (above), `a = {}`, `x = []`, no `c` / `t`.
 
 ### Set-Cookie
 
@@ -340,9 +386,9 @@ The pin cookie is `<cookieName>_f=1` with `Max-Age=1800`.
 
 ## 7. Reading the request
 
-The SDK accepts whatever request object the framework has and reads four things: the `Cookie`
-header, the `User-Agent` header, prefetch hints and, when told where to look, the visitor's
-country. Header names are matched without regard to ASCII case only: fold `A–Z` and nothing else,
+The SDK accepts whatever request object the framework has and reads the `Cookie` header, the
+`User-Agent` header, prefetch hints, when told where to look the visitor's country and, for a
+visitor without a cookie, the client address and the `Accept-Language` header. Header names are matched without regard to ASCII case only: fold `A–Z` and nothing else,
 because Unicode case mapping turns U+212A into `k` and U+017F into `s`. A header with several values
 (Node-style arrays) is joined with `"; "` for `Cookie` and `", "` otherwise. Explicit `cookie` /
 `userAgent` in the context win over the request.
@@ -374,6 +420,32 @@ decoding fails); empty values are skipped. Return all values in order.
   several languages, and a no-break space is whitespace to some trim functions and not to others.
   Anchor the pattern to the whole string (`\A…\z`, not `^…$`, where `$` can match before a final
   newline).
+* `visitorSetHeader(name)` (since 0.4.1): fold `A–Z` to `a–z`; true when the name starts with
+  `sec-`, `accept`, `content-`, `if-`, `x-forwarded-` or `proxy-`, or is one of `authorization`,
+  `cache-control`, `connection`, `cookie`, `dnt`, `forwarded`, `host`, `origin`, `pragma`,
+  `priority`, `purpose`, `range`, `referer`, `te`, `upgrade-insecure-requests`, `user-agent`, `via`,
+  `x-real-ip`, `x-requested-with`. Such a header is never a country source: not as the
+  `countryHeader` option, not from the config. The dashboard applies the same rule. Vectors:
+  `countryHeaderNames`.
+* Client address (since 0.4.1), only to key a visitor without a cookie: the first of these request
+  headers whose value, cut at the first `,`, normalizes to an address: `cf-connecting-ip`,
+  `true-client-ip`, `fastly-client-ip`, `fly-client-ip`, `x-real-ip`, `x-forwarded-for`; else the
+  address of the connection where the platform has one (Node `request.ip` or
+  `request.socket.remoteAddress`, WSGI/Rack/PHP `REMOTE_ADDR`, Go `Request.RemoteAddr`), normalized;
+  else none. A visitor can forge these headers, and gains nothing by it: a forged address only
+  makes them a new visitor, as clearing cookies always could. Vectors: `clientAddresses` (the
+  connection's address is `remoteAddress`).
+* `normalizeAddress(value)`: not a string → none. Strip spaces and tabs at both ends. If it starts
+  with `[`: it needs a `]`, followed by nothing or by `:` and 1–5 digits; the address is what is
+  between the brackets. Else if it is digits and dots, then `:` and 1–5 digits, drop the port. Drop
+  everything from the first `%` (a zone). IPv4: four decimal numbers 0–255 joined by dots, no sign,
+  no leading zero (`07` is refused); the result is the four numbers in decimal. IPv6: groups of 1–4
+  hex digits separated by `:`, at most one `::` standing for one or more zero groups, optionally
+  ending in an IPv4 address that stands for the last two groups; exactly 8 groups in all. An
+  IPv4-mapped address (`::ffff:a.b.c.d`, in any spelling) becomes that IPv4 address. Any other IPv6
+  address becomes its /64 network: the first four groups in lowercase hex without leading zeros,
+  joined by `:` (`2001:db8:1:2`), because phones change the rest of the address every day. Anything
+  else → none. Implement it by hand if the platform's parser disagrees with the `addresses` vectors.
 
 ## 8. getPrice algorithm
 
@@ -392,15 +464,21 @@ try:
       req.country = normalizeCountry(header named by config.countryHeader)   (none if it names none)
   product = config.products[productKey]   missing → fallback("unknown_product")
   product.currency != guard.currency     → fallback("currency_mismatch")
-  exp = experimentFor(product, req.country)
+  country = req.country
+  if config.countryHold > 0 and product has regions:
+      visitor = visitorState()                              (experimentQuote step 1)
+      country = heldCountry(visitor, req.country)
+  exp = experimentFor(product, country)
   no exp:
       not inBounds(product.price) → fallback("out_of_bounds")
-      region = regionFor(req.country)
+      region = regionFor(country)
       region ? quote(region.price, "base_price", currency=region.currency, regional=true, checkoutUrl=null)
              : quote(product.price, "base_price", checkoutUrl=product's)
-      both carry country = req.country
+      both carry country = country
+      with a visitor: remember its state for the request (step 5 below); setCookie =
+          [Set-Cookie(cookieName, sign(state))] if the state changed and holds a country, else []
   exp with no variants, or any variant out of bounds → fallback("out_of_bounds")
-  return experimentQuote(exp, regionFor(req.country))
+  return experimentQuote(exp, regionFor(country))      (with the visitor, if there is one)
 except any error:
   report(error); return bot ? fallback("bot") : noConfig()
 ```
@@ -421,6 +499,26 @@ assignment, no cookie, no exposure, reason `base_price`. That also holds for a v
 carries an assignment from an earlier visit inside the scope; the cookie is left as it is. The
 variants of a scoped test are checked against the bounds only for visitors inside its scope.
 
+**VPN guard** (`heldCountry`, since 0.4.1). Regional prices follow the visitor's IP address, and a
+VPN changes it. A visitor seen lately in a country that pays more keeps that country's price, so
+switching a VPN to a cheaper country changes nothing until the hold runs out:
+
+```
+now  = whole seconds since the epoch
+held = state.c if state has c and t and now - state.t < config.countryHold, else none
+if held and held != country and level(held) > level(country):
+    return held                                    (the state is left as it is)
+if country is not none and held != country:
+    state.c = country; state.t = now; changed = true
+return country
+```
+
+`level(c)`: none → 10000; else `regionFor(c)` → that region's `level`; no region (or one that may not
+be served) → 10000. So the comparison is between what the visitor would actually pay. A visitor
+who moves to a dearer country, or comes back after the hold, is priced where they are and held
+there. A held country also picks the scoped test, the split, the region of a test price, the
+quote's `country` and the exposure's country. Bots never get a hold. Vectors: `countryHold`.
+
 `regionFor(country)` returns the visitor's region when its price may be served, else none:
 
 1. none if `country` is null.
@@ -439,9 +537,10 @@ before regional prices existed; their `country` is still reported.
 
 `experimentQuote()`:
 
-1. State: if an earlier quote of the **same request** left a cookie state for the same cookie input,
-   same user id and same assignment key, start from a copy of it. Otherwise verify the request's
-   assignment cookies (first valid of at most 4). None → new visitor state, `changed = true`.
+1. State (`visitorState()`; already done when the VPN guard ran): if an earlier quote of the **same
+   request** left a cookie state for the same cookie input, same user id and same assignment key,
+   start from a copy of it. Otherwise verify the request's assignment cookies (first valid of at
+   most 4). None → new visitor state (section 6), `changed = true`.
 2. `visitorId` from the visitor key (section 6).
 3. If `state.a` has this experiment **and** that variant still exists in the experiment, it sticks.
    Otherwise pick by bucket and `assign`, `changed = true`. The weights are the split's when
@@ -551,6 +650,27 @@ same test works in the monorepo and in the published repository). Sections:
 * `countries[]`: `{value, country}` for `normalizeCountry`.
 * `bots[]`: `{userAgent, bot}`.
 * `events[]`: `{event, valid}` for the pre-queue validation.
+* `trust[]` steps also carry, since 0.4.1, `code` on every `reject` (the `Leverprice-Config-Error`
+  code, section 4) and, on some `accept` steps, `countryHeader`: the header the SDK will read the
+  country from (null: none).
+* `countryHeaderNames[]`: `{name, allowed}`: `allowed` is `!visitorSetHeader(name)`.
+* `addresses[]`: `{value, address}` for `normalizeAddress`. `clientAddresses[]`: `{headers,
+  remoteAddress?, address}`: the request's headers and the connection's address.
+* `anonVisitors[]`: `{address, userAgent, acceptLanguage, message, v}` with `vectors.assignmentKey`.
+* `productsHeader[]`: `{products, header}`: a client built with these `products` sends this
+  `Leverprice-Products` value.
+* `countryHold`: `{config, guards, visitor, cases[]}`. Each case: `{name, productKey, country?,
+  cookie, localCurrencies?, expect}`. Build a client like for `quotes` (fake transport serving
+  `countryHold.config`, products = `countryHold.guards`, `localCurrencies` when the case says
+  true). If `cookie` is not null, sign the state `{v: countryHold.visitor, a: cookie.a ?? [], x:
+  cookie.x ?? []}` plus, when `cookie.c` is present, `c = cookie.c` and `t = now - cookie.age` (whole
+  seconds, your real clock), and send it as `__pp`. Headers: a browser `User-Agent`, `x-geo-country`
+  when the case has `country`, and the cookie. Call `getPrice(productKey, {request})` and `flush()`.
+  `expect` holds `price`, `currency`, `country`, `regional`, `reason`, `variantId`, `exposures` (sent
+  events without `timestamp` and `visitorId`) and `cookie`: null when the quote sets no `__pp`
+  cookie, else that cookie's verified state as `{c, t, a}` where `c` is the held country or null,
+  `t` is `"kept"` when it equals the `t` you signed, `"fresh"` when it is another value (it must be
+  within a few seconds of now) and null when absent, and `a` the assignment pairs in order.
 * `quotes[]`: `{name, productKey, guards?, headers, userId, exposure?, bot?, countryHeader?,
   localCurrencies?, country?, errors, expect}`. The signed `config` names `x-geo-country` as the
   project's country header. `localCurrencies`, when present, is the client option of that name. Build a client with `secretKey = vectors.secretKey`,
@@ -592,7 +712,12 @@ malformed secret key → `disabled` and one error; a throwing `onError` changes 
 even invalid ones (`minPrice` above `maxPrice`; a string where the language allows one), constructs
 and serves the signed prices;
 an invalid `countryHeader` raises at construction, including a header name with a character outside
-ASCII (U+212A lowercases to `k` in most languages and must still be refused); `logExposure` on a manual quote sends the quote's
+ASCII (U+212A lowercases to `k` in most languages and must still be refused); a `countryHeader` that
+`visitorSetHeader` names (`Accept-Language`, `x-forwarded-for`) is ignored, reported once and never
+reported when disabled; every config request carries `Leverprice-Products`, and
+`Leverprice-Config-Error` after a refused `200` until one is accepted; a request without a cookie
+but with an address gets the same visitor every time (one exposure for 20 requests), and one without
+an address a new one; `logExposure` on a manual quote sends the quote's
 country, and still logs the exposure (without a country) when the quote's country was replaced by
 something that is not one.
 
@@ -634,7 +759,10 @@ something that is not one.
 | Ruby ≥ 3.1 | RubyGems `leverprice` | `require "leverprice"` |
 | Go ≥ 1.22 | `github.com/leverprice/leverprice-go` | `import "github.com/leverprice/leverprice-go"` |
 
-All SDKs: MIT license, version `0.4.0` for this protocol revision (0.4.0 added regional prices:
+All SDKs: MIT license, version `0.4.1` for this protocol revision (0.4.1 added the VPN guard
+`countryHold` with region `level` and the cookie's `c` / `t`, stable keys for visitors without a
+cookie, the `Leverprice-Products` and `Leverprice-Config-Error` request headers, and ignores country
+headers visitors send; 0.4.0 added regional prices:
 `regions`, `localCurrencies`, the config's `countryHeader` and the option that overrides it,
 `country`; stopped using 0.3's `minPrice` and `maxPrice` in code; and tests by country: `scopedExperiment` and `splits`. A 0.3.0 SDK ignores all of them: it keeps serving standard prices,
 splits every visitor by the variants' own weights and never sees a scoped test), a README with the same sections as the JS README (quick start for the main
