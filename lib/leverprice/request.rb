@@ -3,17 +3,20 @@
 module Leverprice
   # @api private
   module Request
-    PURPOSE_HEADERS = %w[sec-purpose purpose x-purpose x-moz].freeze
+    PURPOSE_HEADERS = %w[sec-purpose x-sec-purpose purpose x-purpose x-moz].freeze
     PURPOSE_RE = /prefetch|prerender|preview/
     COOKIE_SEPARATOR_RE = /[;,]/
     HEX_PAIR_RE = /\A\h\h\z/
     RACK_ENV_MARKERS = %w[REQUEST_METHOD rack.version SERVER_NAME].freeze
+    NOT_A_COUNTRY = %w[XX ZZ T1 A1 A2 AP EU].freeze
+    COUNTRY_INPUT_RE = /\A[ \t\n\x0B\x0C\r]*([A-Za-z]{2})[ \t\n\x0B\x0C\r]*\z/
 
-    Info = Struct.new(:cookie_input, :assignment_cookies, :pinned, :user_agent, :prefetch, keyword_init: true)
+    Info = Struct.new(:cookie_input, :assignment_cookies, :pinned, :user_agent, :prefetch, :country,
+                      keyword_init: true)
 
     module_function
 
-    def read(request:, cookie:, user_agent:, cookie_name:)
+    def read(request:, cookie:, user_agent:, cookie_name:, country:, country_header:)
       explicit = cookie.is_a?(String) ? Util.utf8(cookie) : nil
       cookie_input = explicit || header(request, "cookie")
       pinned = false
@@ -29,8 +32,27 @@ module Leverprice
         assignment_cookies: assignment_cookies,
         pinned: pinned,
         user_agent: user_agent.is_a?(String) ? Util.utf8(user_agent) : header(request, "user-agent"),
-        prefetch: prefetch?(request)
+        prefetch: prefetch?(request),
+        country: country_of(request, country, country_header)
       )
+    end
+
+    # A country passed in is final even when it is invalid: the header is never consulted instead.
+    def country_of(request, explicit, country_header)
+      explicit = explicit.to_s if explicit.is_a?(Symbol)
+      return normalize_country(explicit) if explicit.is_a?(String)
+
+      country_header ? normalize_country(header(request, country_header)) : nil
+    end
+
+    def normalize_country(value)
+      return nil unless value.is_a?(String)
+
+      code = value.b[COUNTRY_INPUT_RE, 1]
+      return nil unless code
+
+      code = code.upcase.force_encoding(Util::UTF_8)
+      NOT_A_COUNTRY.include?(code) ? nil : code
     end
 
     def header(request, name)

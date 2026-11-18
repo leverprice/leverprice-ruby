@@ -134,10 +134,10 @@ module Leverprice
       sha256(utf8(salt).b + ":".b + utf8(visitor_id).b).unpack1("N") % 10_000
     end
 
-    def pick_variant(variants, bucket)
+    def pick_variant(variants, bucket, weights = nil)
       accumulated = 0
-      variants.each do |variant|
-        accumulated += variant.weight
+      variants.each_with_index do |variant, index|
+        accumulated += weights ? weights.fetch(index, 0) : variant.weight
         return variant if bucket < accumulated
       end
       variants.last

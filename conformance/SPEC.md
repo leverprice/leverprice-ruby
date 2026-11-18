@@ -18,13 +18,20 @@ to use each part of the file.
    merchant did not configure (a bug in their code). `trackPurchase`, `trackRefund`, `logExposure`,
    `flush`, `refresh`, `preload` never raise.
 3. **Verified and bounded.** Prices come only from a config signed through the root → keyset →
-   config chain, and every price is checked against the merchant's local min/max and currency.
+   config chain, and every standard and test price is checked against the product's signed price
+   range and the merchant's currency.
 4. **Private.** Raw visitor and user ids never leave the merchant's server; only HMACs do.
 5. **No price flips.** A visitor keeps their variant (signed cookie). A browser that got the
    fallback during an outage keeps it for the rest of its session (pin cookie).
 6. **Zero or near-zero dependencies.** Use the standard library. Where the standard library lacks
    Ed25519, use the platform's native crypto first and fall back to a pure implementation
    (see section 13).
+7. **Configured in Leverprice, not in code.** Everything that can change after the integration
+   (prices, ranges, tests, regional prices, where the visitor's country comes from) arrives in the
+   signed config. The merchant's code names only the secret key, each product's currency and
+   fallback price, and whether its checkout can charge other currencies (`localCurrencies`), so new
+   features never need a code change: an SDK that does not know a config
+   field ignores it and keeps serving the prices it understands.
 
 ## 2. Public API
 
@@ -36,7 +43,7 @@ array keys where idiomatic). The concepts and defaults are identical everywhere.
 | Option | Default | Meaning |
 |---|---|---|
 | `secretKey` | — | `pp_sk_live_…` / `pp_sk_test_…`. Missing or malformed → the SDK is off (fallback prices, reason `disabled`, no network). A non-empty malformed key is reported once through `onError` at construction (unless disabled). Trim whitespace first. |
-| `products` | — | Map productKey → guard `{ currency, fallbackPrice, minPrice?, maxPrice? }`. Validated at construction (raise on invalid: this is merchant code). `currency` = 3 letters (stored lowercase). `fallbackPrice` = positive integer. `minPrice` default 1, `maxPrice` default 2^53−1 (Go/PHP/Ruby/Python: same value, 9007199254740991), both integers, `minPrice <= maxPrice`. |
+| `products` | — | Map productKey → guard `{ currency, fallbackPrice }`. Validated at construction (raise on invalid: this is merchant code). `currency` = 3 letters (stored lowercase). `fallbackPrice` = positive integer. The price range comes only from the signed config. `minPrice` and `maxPrice`, hard limits in 0.3, are still accepted so code written for 0.3 keeps compiling and running, but they are never validated and never used (typed SDKs keep them as deprecated fields). |
 | `disabled` | false | Kill switch (see section 9). |
 | `apiUrl` | `https://api.leverprice.com` | Trailing slashes stripped. |
 | `timeoutMs` | 500 | Max time a request waits for a config when none is usable. |
@@ -46,6 +53,8 @@ array keys where idiomatic). The concepts and defaults are identical everywhere.
 | `cookieMaxAgeSeconds` | 15552000 (180 days) | Assignment cookie lifetime. |
 | `cookieSecure` | true | `Secure` attribute. |
 | `cookieDomain` | none | `Domain` attribute. |
+| `countryHeader` | none | Name of the request header that carries the visitor's country (set by the merchant's CDN or host: `cf-ipcountry`, `x-vercel-ip-country`, `cloudfront-viewer-country`…). Usually left out: the project's setting arrives in the config (`countryHeader`, section 4) and this option only overrides it. ASCII whitespace stripped from both ends; empty = none; must match the same token pattern as `cookieName` (raise otherwise) and is lowercased only after that check, so case mapping never sees anything but ASCII. There is no built-in default on purpose: a header the visitor can send themselves would let them choose their price. |
+| `localCurrencies` | false | Also serve regional prices whose currency differs from the product's `currency`. Without it, only regional prices in the product's own currency are served and other countries get the standard price, so a checkout that ignores `quote.currency` can never charge an amount in the wrong currency. Set it only when the checkout charges `quote.price` in `quote.currency`. JS: anything but `true` is false; other languages: a boolean. |
 | `flushIntervalMs` | 2000 | How long exposures may wait before being sent. |
 | `trustedRootKeys` | `ROOT_PUBLIC_KEYS` | Root public keys by id (raw Ed25519, base64url). For staging and tests. |
 | HTTP client override | platform default | `fetch` in JS; an injectable transport in other languages (needed for tests). |
@@ -62,7 +71,7 @@ MIN_KEYSET_VERSION = 1
 
 | Method | |
 |---|---|
-| `getPrice(productKey, context)` → `Quote` | context: `request`, `cookie`, `userAgent`, `userId`, `exposure` (`"auto"` default / `"manual"`), `bot` (bool, optional). |
+| `getPrice(productKey, context)` → `Quote` | context: `request`, `cookie`, `userAgent`, `userId`, `exposure` (`"auto"` default / `"manual"`), `bot` (bool, optional), `country` (string, optional). |
 | `logExposure(quote)` → bool | For manual mode: logs the exposure when the price is really on screen. Returns true if an exposure was queued. Sets `quote.exposureLogged = true`. |
 | `trackPurchase({ provider, orderId, amount, currency, metadata, timestamp? })` | Queues and flushes immediately. |
 | `trackRefund({ provider, orderId, currency, timestamp?, refundId + amount \| refundedTotal })` | Queues and flushes immediately. |
@@ -80,19 +89,21 @@ offer async variants where the ecosystem expects them (Python `asyncio`).
 |---|---|
 | `productKey` | as asked |
 | `price` | integer minor units |
-| `currency` | lowercase, from the merchant's guard |
+| `currency` | lowercase: the merchant's guard currency, or the region's currency when `regional` is true |
+| `country` | the visitor's country (uppercase ISO 3166-1 alpha-2) when known and the reason is `experiment` or `base_price`; otherwise null |
+| `regional` | `price` is the regional price of `country` (section 8) |
 | `isFallback` | `price` is the guard's `fallbackPrice` |
 | `reason` | see the table below |
 | `experimentId`, `variantId`, `visitorId` | set only when reason is `experiment`, else null |
 | `metadata` | `{ pp_exp, pp_var, pp_vid, pp_sig }` when reason is `experiment`, else empty map |
 | `setCookie` | list of `Set-Cookie` header values (zero or more) |
-| `checkoutUrl` | variant's `checkoutUrl`, else product's, else null (also on `base_price` / `bot` quotes: the product's) |
+| `checkoutUrl` | variant's `checkoutUrl`, else product's, else null (also on `base_price` / `bot` quotes: the product's). Always null when `regional` is true: hosted links are made for the standard prices |
 | `exposureLogged` | an exposure for this visitor and experiment has been logged (now or earlier) |
 
 | reason | price | isFallback |
 |---|---|---|
 | `experiment` | the visitor's variant | false |
-| `base_price` | the product's standard price (no experiment) | false |
+| `base_price` | the product's price for this visitor, standard or regional (no experiment, or the visitor is outside its scope) | false |
 | `bot` | standard price if a usable config has the product within bounds, else fallback | depends |
 | `disabled` | fallback | true |
 | `no_config` | fallback; `setCookie` = [pin] | true |
@@ -191,6 +202,9 @@ Parse the config payload (throw = reject the whole config):
 * `keyFingerprints`: array of strings each matching `^[0-9a-f]{16}$`.
 * `projectId`: non-empty string. `version`: safe integer ≥ 0. `expiresAt`: finite number.
 * `assignmentKey`: base64url string decoding to ≥ 32 bytes.
+* `countryHeader`: a string matching `^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$` (the whole string, nothing
+  trimmed) is kept, ASCII-lowercased. Absent, null or anything else means none; it never rejects
+  the config.
 * `products`: object. For each entry, parse the product; an invalid product is **dropped** (left out,
   its key added to `dropped`), the rest of the config is still used.
 
@@ -200,10 +214,37 @@ Parse a product (null = invalid):
   `maxPrice` safe integers (|n| ≤ 2^53−1, no fractions).
 * `experiment`: null/absent, or an object with `id` matching `^[A-Za-z0-9_-]{1,64}$`, string `salt`,
   array `variants`; every variant an object with valid `id`, safe-integer `price`, safe-integer
-  `weight >= 0`. Any bad variant invalidates the product.
+  `weight >= 0`. Any bad variant invalidates the product. This is a test open to every visitor; a
+  `countries` field on it means nothing and is not looked at.
+* `scopedExperiment`: null/absent, or an object of the same shape as `experiment` plus `countries`:
+  a non-empty array of at most 300 country codes, each country at most once. This is a test that
+  runs only for visitors from those countries (its scope). A missing, empty or malformed
+  `countries`, a repeated country, a `scopedExperiment` that is not an object, or a product that
+  has both `experiment` and `scopedExperiment` invalidates the product. Keep one parsed test per
+  product: the open one, or the scoped one with its scope as a set.
+* `splits` (on either kind of test): absent or null means none, and so does an empty array.
+  Otherwise an array of at most 300 entries, each an object with `countries` (a non-empty array of
+  country codes, of any length) and `weights` (an array with exactly one safe integer `>= 0` per
+  variant, in the order of `variants`). A country listed more than once (in two splits, or twice
+  in one), or anything else out of shape, invalidates the product. Build a map country → weights.
+  Weights are checked one by one, exactly like a variant's `weight`: they need not add up to 10000
+  and one may be larger than 10000 (section 6 says what a short total does). A split may name a
+  country outside the scope of a scoped test; it is kept and never used.
+* A country code in `regions`, `countries` and `splits` is a string of exactly two letters `A–Z`:
+  `^[A-Z]{2}$` matched against the whole string. Where `$` can match before a final newline
+  (Python, Ruby, PHP), use `\A…\z` or a full match, so `"IN\n"` is refused. A JSON object is not an
+  array: `{"0": "IN"}` is refused wherever a list is expected.
 * `checkoutUrl` (product and variant): kept only if it is a string matching
   `^https://[^\s]+$` (case-insensitive scheme).
 * `id`: string or "".
+* `regions`: absent or null means no regions. Otherwise an array of at most 300 entries, each an
+  object with `countries` (a non-empty array of strings matching `^[A-Z]{2}$`), `currency` (string
+  matching `^[A-Za-z]{3}$`, stored lowercase) and `price` (safe integer > 0). A country listed more
+  than once (in two regions, or twice in one), or anything else out of shape, invalidates the
+  product. Keep the regions in order and build a map country → region index.
+* Variant `regional`: when the product has at least one region, every variant must carry
+  `regional`, an array with exactly one safe integer > 0 per region (same order); otherwise the
+  product is invalid. When the product has no regions, `regional` is ignored (treated as empty).
 
 Client-level acceptance after `verify` succeeds (reject = keep the current config):
 
@@ -251,7 +292,8 @@ background worker must never keep the process alive (daemon threads) and must su
 * **Bucket**: `SHA-256(UTF-8(salt + ":" + visitorId))`, first 4 bytes as a big-endian unsigned
   32-bit integer, modulo 10000.
 * **Pick variant**: walk variants in order accumulating `weight`; the first with
-  `bucket < accumulated` wins; if none, the last variant.
+  `bucket < accumulated` wins; if none, the last variant. When the visitor's country has a split
+  (section 8), accumulate that split's weights instead, position by position.
 * **Attribution tag** (`pp_sig`): `hex(HMAC(key, "pp:attr:v1:" + experimentId + ":" + variantId + ":" + visitorId))[0:16]`.
 
 ### Assignment cookie
@@ -298,10 +340,12 @@ The pin cookie is `<cookieName>_f=1` with `Max-Age=1800`.
 
 ## 7. Reading the request
 
-The SDK accepts whatever request object the framework has and reads three things: the `Cookie`
-header, the `User-Agent` header and prefetch hints. Header names are case-insensitive. A header with
-several values (Node-style arrays) is joined with `"; "` for `Cookie` and `", "` otherwise. Explicit
-`cookie` / `userAgent` in the context win over the request.
+The SDK accepts whatever request object the framework has and reads four things: the `Cookie`
+header, the `User-Agent` header, prefetch hints and, when told where to look, the visitor's
+country. Header names are matched without regard to ASCII case only: fold `A–Z` and nothing else,
+because Unicode case mapping turns U+212A into `k` and U+017F into `s`. A header with several values
+(Node-style arrays) is joined with `"; "` for `Cookie` and `", "` otherwise. Explicit `cookie` /
+`userAgent` in the context win over the request.
 
 Cookie values for a name (`cookieValues(header, name)`): split the header on `;` **and** `,` (Fetch
 `Headers` joins repeated headers with `", "`); for each part, the name is the text before the first
@@ -314,8 +358,22 @@ decoding fails); empty values are skipped. Return all values in order.
 * `pinned` = `cookieValues(cookieHeader, cookieName + "_f")` is non-empty.
 * Legacy: if the explicit `cookie` context value contains no `=`, it is the bare assignment cookie
   value (trimmed; empty → none) and the pin is not read.
-* Prefetch: true if any of `sec-purpose`, `purpose`, `x-purpose`, `x-moz` matches
-  `/prefetch|prerender|preview/i`, or `next-router-prefetch` equals `1`.
+* Prefetch: true if any of `sec-purpose`, `x-sec-purpose`, `purpose`, `x-purpose`, `x-moz` matches
+  `/prefetch|prerender|preview/i`, or `next-router-prefetch` equals `1`. `x-sec-purpose` is what
+  Turbo 8 sends for hover prefetches: scripts cannot set a `Sec-` header themselves.
+* Country: if the context's `country` is a string, it is the input (even when it turns out invalid:
+  no header is then consulted). Otherwise, if the `countryHeader` option is set, the value of that
+  request header (the config's header is then never consulted, even when the option's header is
+  missing). Otherwise the value of the header the config's `countryHeader` names, read once a
+  config is loaded (section 8); none when the config names none. `normalizeCountry(input)`: not a string → null; the whole
+  input must be exactly two ASCII letters (`A–Z`, `a–z`), optionally surrounded by ASCII whitespace
+  (space, tab, LF, VT, FF, CR) and nothing else; uppercase those two letters; the result must not
+  be one of `XX`, `ZZ`, `T1`, `A1`, `A2`, `AP`, `EU` (what CDNs send for "unknown", Tor, anonymous
+  proxies and non-countries); else null. Check the letters **before** changing case and never use
+  Unicode-aware trimming or case mapping here: `"ß".upper()` is `"SS"` and `"ﬁ"` becomes `"FI"` in
+  several languages, and a no-break space is whitespace to some trim functions and not to others.
+  Anchor the pattern to the whole string (`\A…\z`, not `^…$`, where `$` can match before a final
+  newline).
 
 ## 8. getPrice algorithm
 
@@ -330,22 +388,54 @@ try:
       kick(now); return fallback("pinned_fallback", setCookie=[pin])
   config = currentConfig()
   if none: return noConfig()                         fallback("no_config", [pin]); mark the request pinned
+  if no context country and no countryHeader option:
+      req.country = normalizeCountry(header named by config.countryHeader)   (none if it names none)
   product = config.products[productKey]   missing → fallback("unknown_product")
   product.currency != guard.currency     → fallback("currency_mismatch")
-  no experiment: inBounds(product.price) ? quote(product.price, "base_price", checkoutUrl=product's)
-                                         : fallback("out_of_bounds")
-  experiment with no variants, or any variant out of bounds → fallback("out_of_bounds")
-  return experimentQuote()
+  exp = experimentFor(product, req.country)
+  no exp:
+      not inBounds(product.price) → fallback("out_of_bounds")
+      region = regionFor(req.country)
+      region ? quote(region.price, "base_price", currency=region.currency, regional=true, checkoutUrl=null)
+             : quote(product.price, "base_price", checkoutUrl=product's)
+      both carry country = req.country
+  exp with no variants, or any variant out of bounds → fallback("out_of_bounds")
+  return experimentQuote(exp, regionFor(req.country))
 except any error:
   report(error); return bot ? fallback("bot") : noConfig()
 ```
 
-`inBounds(p)`: safe integer, `p > 0`, `p >= max(guard.minPrice, product.minPrice)`,
-`p <= min(guard.maxPrice, product.maxPrice)`.
+`inBounds(p)`: safe integer, `p > 0`, `product.minPrice <= p <= product.maxPrice` (the signed
+range).
 
 `botQuote()`: `currentConfig()`; if it has the product with the guard's currency and the standard
 price in bounds → price quote with reason `bot` (not a fallback, `checkoutUrl` = product's), else
-`fallback("bot")`. Bots get no cookie and no exposure.
+`fallback("bot")`. Bots get no cookie, no exposure and never a regional price (`country` null).
+
+Every fallback quote and every `bot` quote has `country = null` and `regional = false`.
+
+`experimentFor(product, country)` is the test the visitor is in: the product's open test; or its
+scoped test when `country` is not null and is in the test's scope; otherwise none. A visitor outside
+the scope, or whose country is unknown, is priced exactly as if the product had no test: no
+assignment, no cookie, no exposure, reason `base_price`. That also holds for a visitor whose cookie
+carries an assignment from an earlier visit inside the scope; the cookie is left as it is. The
+variants of a scoped test are checked against the bounds only for visitors inside its scope.
+
+`regionFor(country)` returns the visitor's region when its price may be served, else none:
+
+1. none if `country` is null.
+2. `index` = the product's region index for `country`; none if the country is in no region.
+3. none if `region.currency` differs from the guard's currency and the `localCurrencies` option is
+   not true (nothing is reported). Only that option says the checkout charges `quote.currency`.
+4. Otherwise the region `{ index, currency, price }`.
+
+Regional prices need no other check here: the server derives them from the standard and test
+prices checked above, keeps every country between 5% and 200% of the standard price, and signs no
+region for a product sold through checkout links.
+
+The standard price checks always come first: a product whose standard price or variants are out of
+bounds is a fallback for every country. A visitor without a usable region is priced exactly as
+before regional prices existed; their `country` is still reported.
 
 `experimentQuote()`:
 
@@ -354,15 +444,24 @@ price in bounds → price quote with reason `bot` (not a fallback, `checkoutUrl`
    assignment cookies (first valid of at most 4). None → new visitor state, `changed = true`.
 2. `visitorId` from the visitor key (section 6).
 3. If `state.a` has this experiment **and** that variant still exists in the experiment, it sticks.
-   Otherwise pick by bucket and `assign`, `changed = true`.
+   Otherwise pick by bucket and `assign`, `changed = true`. The weights are the split's when
+   `req.country` is not null and a split lists it, else the variants' own. A split never moves a
+   visitor who already has a variant.
 4. `logged` = experiment in `state.x`, or this process already logged `(experimentId, visitorId)`.
    If not logged, exposure mode is `auto` and the request is not a prefetch: record the exposure
    (section 10), `logged = true`. If `logged` and `markExposed(state, exp)` returns true,
    `changed = true`.
 5. Remember the state for later quotes of the same request.
-6. Return the variant price, `metadata = { pp_exp, pp_var, pp_vid, pp_sig }`,
+6. Return `price = region ? variant.regional[region.index] : variant.price`,
+   `currency = region ? region.currency : guard.currency`, `country = req.country`,
+   `regional = region is set`, `metadata = { pp_exp, pp_var, pp_vid, pp_sig }`,
    `setCookie = changed ? [Set-Cookie(cookieName, sign(state), cookieMaxAgeSeconds)] : []`,
-   `checkoutUrl = variant.checkoutUrl ?? product.checkoutUrl ?? null`, `exposureLogged = logged`.
+   `checkoutUrl = region ? null : (variant.checkoutUrl ?? product.checkoutUrl ?? null)`,
+   `exposureLogged = logged`.
+
+The exposure recorded in step 4 carries `req.country` when it is not null (section 10), whether or
+not a regional price applies. `logExposure(quote)` sends `normalizeCountry(quote.country)` the same
+way: a quote that went through a cache or was edited can never make its exposure invalid.
 
 "Same request" sharing lets one page price several products and send one cookie: the last quote's
 `Set-Cookie` carries every assignment. Quotes of one request are computed one after another. Where a
@@ -381,17 +480,19 @@ do nothing; errors are not reported.
 Wire event shapes (JSON):
 
 ```
-{ "type": "exposure", "experimentId", "variantId", "visitorId", "timestamp" }
+{ "type": "exposure", "experimentId", "variantId", "visitorId", "timestamp", "country"? }
 { "type": "purchase", "provider", "orderId", "amount", "currency", "timestamp", "attribution": null | { "experimentId", "variantId", "visitorId", "signature": null | "<16 hex>" } }
 { "type": "refund", "provider", "orderId", "currency", "timestamp", ("refundId", "amount") and/or "refundedTotal" }
 ```
 
 `timestamp` is milliseconds since the epoch. Providers: `stripe`, `polar`, `lemonsqueezy`, `dodo`,
-`other`.
+`paddle`, `creem`, `other`. `country` on an exposure is the visitor's normalized country; the key is left out (never
+sent as null) when the country is unknown.
 
 Validation before queueing (an invalid event is reported as
 `Leverprice: dropped invalid <type> event: <problem>` and dropped; the server would reject the whole
 batch for it): timestamp a positive integer; ids match `^[A-Za-z0-9_-]{1,64}$`; provider known;
+an exposure's `country`, when present, a string matching `^[A-Z]{2}$`;
 `orderId` and `refundId` strings of 1–255 characters; currency `^[a-z]{3}$`; amounts integers in
 `0..10000000000`; attribution ids valid and signature null or `^[0-9a-f]{16}$`; a refund needs
 `refundId` + `amount`, or `refundedTotal`.
@@ -447,25 +548,37 @@ same test works in the monorepo and in the published repository). Sections:
 * `cookies.ops[]`: `{name, state, op: {assign: [exp, var]} | {markExposed: exp}, changed?, result}`.
 * `cookieHeader[]`: `{header, name, values}`. `prefetch[]`: `{headers, prefetch}` (lowercase names).
 * `setCookie[]`: `{name, value, maxAge, secure, domain, header}`.
+* `countries[]`: `{value, country}` for `normalizeCountry`.
 * `bots[]`: `{userAgent, bot}`.
 * `events[]`: `{event, valid}` for the pre-queue validation.
-* `quotes[]`: `{name, productKey, guards?, headers, userId, exposure?, bot?, expect}`. Build a client
-  with `secretKey = vectors.secretKey`, `trustedRootKeys = vectors.rootKeys`, products = the
-  `quotes` default guards (below) overridden by the case's `guards`, and a fake transport that
+* `quotes[]`: `{name, productKey, guards?, headers, userId, exposure?, bot?, countryHeader?,
+  localCurrencies?, country?, errors, expect}`. The signed `config` names `x-geo-country` as the
+  project's country header. `localCurrencies`, when present, is the client option of that name. Build a client with `secretKey = vectors.secretKey`,
+  `trustedRootKeys = vectors.rootKeys`, products = the `quotes` default guards (below) overridden by
+  the case's `guards`, the `countryHeader` and `localCurrencies` options when the case has them, and a fake transport that
   answers `GET /v1/config` with `vectors.config` (status 200, `ETag: "v5"`) and `POST /v1/events`
-  with 202. Call `getPrice(productKey, {request: headers, userId, exposure, bot})`, then `flush()`.
-  `expect` holds every quote field plus `exposures`: the events sent, without `timestamp`. The only
-  `onError` message allowed is the malformed-products report.
+  with 202. Call `getPrice(productKey, {request: headers, userId, exposure, bot, country})` (pass
+  `country` only when the case has it), then `flush()`. `expect` holds every quote field except
+  `productKey`, plus `exposures`: the events sent, without `timestamp` (an exposure has a `country`
+  key only when the country is known). `errors` lists, in order, every `onError` message the case must produce apart
+  from the malformed-products report, which is always allowed. Cases about products that are not in
+  the table below (`local`, `localwild`, `split`, the malformed ones) carry all the guards they need.
+  Two cases put the 0.3 keys `minPrice` and `maxPrice` in a guard: pass them through exactly like
+  0.3 merchant code would, and the quote must not change.
 
   Default guards for `quotes`:
 
   ```
-  pro:   usd, fallback 1900, min 1500, max 3900
-  basic: usd, fallback 1000
-  euro:  eur, fallback 1200, min 100, max 5000
-  wild:  usd, fallback 2000, min 1000, max 3000
-  bad:   usd, fallback 150
-  ghost: usd, fallback 4900
+  pro:     usd, fallback 1900
+  basic:   usd, fallback 1000
+  euro:    eur, fallback 1200
+  wild:    usd, fallback 2000
+  bad:     usd, fallback 150
+  ghost:   usd, fallback 4900
+  geo:     usd, fallback 2900
+  geox:    usd, fallback 2900
+  badgeo:  usd, fallback 2900
+  badgeox: usd, fallback 2900
   ```
 
 Behavioural tests every SDK also needs (with a fake transport and a controllable clock where the
@@ -475,7 +588,13 @@ the config; a newer `Leverprice-Config-Version` triggers an unconditional fetch;
 re-queue purchases and drop exposures; a `400` is not retried; kill switch via option and env;
 malformed secret key → `disabled` and one error; a throwing `onError` changes nothing;
 `trackPurchase` reads attribution from metadata and converts seconds to milliseconds;
-`ROOT_PUBLIC_KEYS` contains only valid 32-byte keys.
+`ROOT_PUBLIC_KEYS` contains only valid 32-byte keys; a guard with 0.3's `minPrice` and `maxPrice`,
+even invalid ones (`minPrice` above `maxPrice`; a string where the language allows one), constructs
+and serves the signed prices;
+an invalid `countryHeader` raises at construction, including a header name with a character outside
+ASCII (U+212A lowercases to `k` in most languages and must still be refused); `logExposure` on a manual quote sends the quote's
+country, and still logs the exposure (without a country) when the quote's country was replaced by
+something that is not one.
 
 ## 13. Platform notes
 
@@ -500,6 +619,10 @@ malformed secret key → `disabled` and one error; a throwing `onError` changes 
   from a file cache (cheap with sodium) or keep a MAC; never trust a cached file blindly.
 * **Go.** `context.Context` on every call; goroutines for refresh and flush; `Close()` /
   `Flush(ctx)` for shutdown.
+* **CGI-style header maps (WSGI, Rack, `$_SERVER`).** `CF-IPCountry` and `CF_IPCountry` both become
+  `HTTP_CF_IPCOUNTRY`, so the SDK cannot tell the header the CDN set from one a visitor spelled with
+  underscores. The server in front must drop header names with underscores (nginx does by default);
+  the READMEs of those SDKs say so next to `countryHeader`.
 
 ## 14. Packaging
 
@@ -511,6 +634,9 @@ malformed secret key → `disabled` and one error; a throwing `onError` changes 
 | Ruby ≥ 3.1 | RubyGems `leverprice` | `require "leverprice"` |
 | Go ≥ 1.22 | `github.com/leverprice/leverprice-go` | `import "github.com/leverprice/leverprice-go"` |
 
-All SDKs: MIT license, version `0.3.0` for this protocol revision, a README with the same sections as
-the JS README (quick start for the main frameworks of that language, guarantees, requests and
-cookies, exposures, bots, kill switch, outages, trust chain, reference), and a `CHANGELOG.md`.
+All SDKs: MIT license, version `0.4.0` for this protocol revision (0.4.0 added regional prices:
+`regions`, `localCurrencies`, the config's `countryHeader` and the option that overrides it,
+`country`; stopped using 0.3's `minPrice` and `maxPrice` in code; and tests by country: `scopedExperiment` and `splits`. A 0.3.0 SDK ignores all of them: it keeps serving standard prices,
+splits every visitor by the variants' own weights and never sees a scoped test), a README with the same sections as the JS README (quick start for the main
+frameworks of that language, guarantees, requests and cookies, regional prices, exposures, bots, kill
+switch, outages, trust chain, reference), and a `CHANGELOG.md`.

@@ -49,8 +49,8 @@ module TestHelpers
            "Chrome/142.0.0.0 Safari/537.36"
   PIN = "__pp_f=1; Path=/; Max-Age=1800; SameSite=Lax; HttpOnly; Secure"
   PRODUCTS = {
-    "pro" => { currency: "usd", fallback_price: 1900, min_price: 1000, max_price: 5000 },
-    "team" => { currency: "usd", fallback_price: 4900, min_price: 1000, max_price: 9000 },
+    "pro" => { currency: "usd", fallback_price: 1900 },
+    "team" => { currency: "usd", fallback_price: 4900 },
     "basic" => { currency: "usd", fallback_price: 1000 }
   }.freeze
 

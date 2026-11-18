@@ -6,20 +6,26 @@ class ConformanceTest < Minitest::Test
   V = Vectors.data
 
   DEFAULT_GUARDS = {
-    "pro" => { "currency" => "usd", "fallbackPrice" => 1900, "minPrice" => 1500, "maxPrice" => 3900 },
+    "pro" => { "currency" => "usd", "fallbackPrice" => 1900 },
     "basic" => { "currency" => "usd", "fallbackPrice" => 1000 },
-    "euro" => { "currency" => "eur", "fallbackPrice" => 1200, "minPrice" => 100, "maxPrice" => 5000 },
-    "wild" => { "currency" => "usd", "fallbackPrice" => 2000, "minPrice" => 1000, "maxPrice" => 3000 },
+    "euro" => { "currency" => "eur", "fallbackPrice" => 1200 },
+    "wild" => { "currency" => "usd", "fallbackPrice" => 2000 },
     "bad" => { "currency" => "usd", "fallbackPrice" => 150 },
-    "ghost" => { "currency" => "usd", "fallbackPrice" => 4900 }
+    "ghost" => { "currency" => "usd", "fallbackPrice" => 4900 },
+    "geo" => { "currency" => "usd", "fallbackPrice" => 2900 },
+    "geox" => { "currency" => "usd", "fallbackPrice" => 2900 },
+    "badgeo" => { "currency" => "usd", "fallbackPrice" => 2900 },
+    "badgeox" => { "currency" => "usd", "fallbackPrice" => 2900 }
   }.freeze
 
   QUOTE_FIELDS = {
-    "price" => :price, "currency" => :currency, "isFallback" => :is_fallback, "reason" => :reason,
-    "experimentId" => :experiment_id, "variantId" => :variant_id, "visitorId" => :visitor_id,
-    "metadata" => :metadata, "checkoutUrl" => :checkout_url, "exposureLogged" => :exposure_logged,
-    "setCookie" => :set_cookie
+    "price" => :price, "currency" => :currency, "country" => :country, "regional" => :regional,
+    "isFallback" => :is_fallback, "reason" => :reason, "experimentId" => :experiment_id,
+    "variantId" => :variant_id, "visitorId" => :visitor_id, "metadata" => :metadata,
+    "checkoutUrl" => :checkout_url, "exposureLogged" => :exposure_logged, "setCookie" => :set_cookie
   }.freeze
+
+  MALFORMED_PRODUCTS_RE = /\ALeverprice config v\d+: ignored malformed products/
 
   def assignment_key
     Leverprice::Util.b64url_decode(V["assignmentKey"])
@@ -147,6 +153,17 @@ class ConformanceTest < Minitest::Test
     end
   end
 
+  def test_countries
+    V["countries"].each do |vector|
+      country = Leverprice::Request.normalize_country(vector["value"])
+      if vector["country"].nil?
+        assert_nil country, vector.inspect
+      else
+        assert_equal vector["country"], country, vector.inspect
+      end
+    end
+  end
+
   def test_bots
     V["bots"].each do |vector|
       assert_equal vector["bot"], Leverprice.bot?(vector["userAgent"]), vector["userAgent"]
@@ -171,16 +188,21 @@ class ConformanceTest < Minitest::Test
         secret_key: V["secretKey"],
         products: guards,
         trusted_root_keys: V["rootKeys"],
+        country_header: test_case["countryHeader"],
+        local_currencies: test_case.fetch("localCurrencies", false),
         transport: transport,
         clock: -> { V["now"] },
         on_error: ->(e) { errors << e.message }
       )
-      quote = client.get_price(test_case["productKey"], request: test_case["headers"], user_id: test_case["userId"],
-                                                        exposure: test_case["exposure"], bot: test_case["bot"])
+      context = { request: test_case["headers"], user_id: test_case["userId"], exposure: test_case["exposure"],
+                  bot: test_case["bot"] }
+      context[:country] = test_case["country"] if test_case.key?("country")
+      quote = client.get_price(test_case["productKey"], **context)
       client.flush
       name = test_case["name"]
       expected = test_case["expect"]
 
+      assert_equal QUOTE_FIELDS.keys.sort, (expected.keys - ["exposures"]).sort, "#{name}: expected quote fields"
       assert_equal test_case["productKey"], quote.product_key, name
       QUOTE_FIELDS.each do |field, reader|
         value = quote.public_send(reader)
@@ -192,7 +214,7 @@ class ConformanceTest < Minitest::Test
       end
 
       assert_equal expected["exposures"], transport.events.map { |e| e.except("timestamp") }, "#{name}: exposures"
-      assert_empty errors.grep_v(/\ALeverprice config v\d+: ignored malformed products/), name
+      assert_equal test_case["errors"], errors.grep_v(MALFORMED_PRODUCTS_RE), "#{name}: errors"
       client.close
     end
   end

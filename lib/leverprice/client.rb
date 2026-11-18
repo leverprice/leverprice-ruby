@@ -9,7 +9,9 @@ module Leverprice
     USER_AGENT = "leverprice-sdk-ruby/#{VERSION}".freeze
     SDK_INFO = { "name" => "leverprice-ruby", "version" => VERSION }.freeze
     KEY_RE = /\App_sk_(?:live|test)_[0-9A-Za-z]{40}\z/
-    COOKIE_NAME_RE = /\A[!\#$%&'*+\-.^_`|~0-9A-Za-z]+\z/
+    HEADER_NAME_RE = Wire::HEADER_NAME_RE
+    COOKIE_NAME_RE = HEADER_NAME_RE
+    ASCII_SPACE_ENDS_RE = /\A[ \t\n\x0B\x0C\r]+|[ \t\n\x0B\x0C\r]+\z/
     SIG_RE = /\A[0-9a-f]{16}\z/
     DIGITS_RE = /\A\d+\z/
     PIN_MAX_AGE_SECONDS = 1800
@@ -23,11 +25,12 @@ module Leverprice
     MAX_DEDUPE = 10_000
     IDLE_WAIT_SECONDS = 60
 
-    Guard = Struct.new(:currency, :fallback_price, :min_price, :max_price)
+    Guard = Struct.new(:currency, :fallback_price)
+    Region = Struct.new(:index, :currency, :price)
     Scope = Struct.new(:mutex, :cookie, :pinned)
     ScopeCookie = Struct.new(:input, :user_id, :assignment_key, :state)
-    Context = Struct.new(:cookie, :user_agent, :user_id, :exposure, :bot, keyword_init: true)
-    private_constant :Guard, :Scope, :ScopeCookie, :Context
+    Context = Struct.new(:cookie, :user_agent, :user_id, :exposure, :bot, :country, keyword_init: true)
+    private_constant :Guard, :Region, :Scope, :ScopeCookie, :Context
 
     # @api private
     class Flight
@@ -62,13 +65,19 @@ module Leverprice
     end
     private_constant :Flight
 
-    # @param products [Hash] product key => `{ currency:, fallback_price:, min_price:, max_price: }` (minor units)
+    # @param products [Hash] product key => `{ currency:, fallback_price: }` in minor units; `min_price:` and
+    #   `max_price:` are deprecated and ignored since 0.4: the price range is set in Leverprice
     # @param secret_key [String, nil] `pp_sk_live_…` or `pp_sk_test_…`; missing or malformed turns the SDK off
-    # @raise [ArgumentError] for invalid products or cookie_name
+    # @param country_header [String, nil] request header your CDN or host sets to the visitor's country, such as
+    #   `cf-ipcountry`; overrides the project's setting. Name only a header visitors cannot set
+    # @param local_currencies [Boolean] serve regional prices in the visitor's currency, not only in each product's
+    #   own; set it only when your checkout charges `quote.price` in `quote.currency`
+    # @raise [ArgumentError] for invalid products, cookie_name or country_header
     def initialize(products:, secret_key: nil, disabled: false, api_url: nil, timeout_ms: nil,
                    refresh_interval_ms: nil, max_stale_ms: nil, cookie_name: nil, cookie_max_age_seconds: nil,
-                   cookie_secure: nil, cookie_domain: nil, flush_interval_ms: nil, trusted_root_keys: nil,
-                   transport: nil, on_error: nil, logger: nil, clock: nil, sleeper: nil)
+                   cookie_secure: nil, cookie_domain: nil, country_header: nil, local_currencies: false,
+                   flush_interval_ms: nil, trusted_root_keys: nil, transport: nil, on_error: nil, logger: nil,
+                   clock: nil, sleeper: nil)
       @guards = normalize_guards(products)
       @disabled = disabled == true
       @api_url = (api_url || DEFAULT_API_URL).to_s.sub(%r{/+\z}, "")
@@ -83,6 +92,8 @@ module Leverprice
       @cookie_max_age = Util.safe_int(cookie_max_age_seconds) || cookie_max_age_seconds || 15_552_000
       @cookie_secure = cookie_secure != false
       @cookie_domain = cookie_domain
+      @country_header = normalize_country_header(country_header)
+      @local_currencies = local_currencies == true
       @flush_interval_ms = flush_interval_ms || 2_000
       @transport = transport || NetHTTPTransport.new
       raise ArgumentError, "Leverprice: transport must respond to #call" unless @transport.respond_to?(:call)
@@ -119,16 +130,19 @@ module Leverprice
     # @param user_id [String, Integer, nil] your signed-in user's id; only its HMAC leaves your server
     # @param exposure [:auto, :manual, nil] `:manual` assigns without logging; call {#log_exposure} later
     # @param bot [Boolean, nil] your own bot verdict, skipping the built-in check
+    # @param country [String, Symbol, nil] the visitor's country (ISO 3166-1 alpha-2); overrides every country header
     # @return [Quote]
     # @raise [ArgumentError] when `product_key` is not configured
-    def get_price(product_key, request: nil, cookie: nil, user_agent: nil, user_id: nil, exposure: nil, bot: nil)
+    def get_price(product_key, request: nil, cookie: nil, user_agent: nil, user_id: nil, exposure: nil, bot: nil,
+                  country: nil)
       key = product_key.to_s
       guard = @guards[key]
       raise ArgumentError, %(Leverprice: unknown product "#{key}". Add it to the products option.) unless guard
       return fallback_quote(key, guard, "disabled") if off?
 
       check_fork
-      context = Context.new(cookie: cookie, user_agent: user_agent, user_id: user_id, exposure: exposure, bot: bot)
+      context = Context.new(cookie: cookie, user_agent: user_agent, user_id: user_id, exposure: exposure, bot: bot,
+                            country: country)
       scope = scope_for(request)
       return compute_quote(key, guard, request, context, nil) unless scope
 
@@ -149,7 +163,8 @@ module Leverprice
       visitor_id = quote.visitor_id
       return false if [experiment_id, variant_id, visitor_id].any? { |id| id.nil? || id.empty? }
 
-      queued = record_exposure(experiment_id, variant_id, visitor_id)
+      country = quote.respond_to?(:country) ? Request.normalize_country(quote.country) : nil
+      queued = record_exposure(experiment_id, variant_id, visitor_id, country)
       quote.exposure_logged = true
       queued
     rescue StandardError => e
@@ -158,7 +173,7 @@ module Leverprice
     end
 
     # Reports a completed purchase and sends it right away. Never raises.
-    # @param provider [String, Symbol] "stripe", "polar", "lemonsqueezy", "dodo" or "other"
+    # @param provider [String, Symbol] "stripe", "polar", "lemonsqueezy", "dodo", "paddle", "creem" or "other"
     # @param order_id [String, Integer] the id your provider's webhook reports
     # @param amount [Integer] minor units, after discounts, excluding tax
     # @param currency [String]
@@ -355,7 +370,7 @@ module Leverprice
     def compute_quote(key, guard, request, context, scope)
       bot = false
       info = Request.read(request: request, cookie: context.cookie, user_agent: context.user_agent,
-                          cookie_name: @cookie_name)
+                          cookie_name: @cookie_name, country: context.country, country_header: @country_header)
       bot = [true, false].include?(context.bot) ? context.bot : Bots.bot?(info.user_agent)
       return bot_quote(key, guard) if bot
 
@@ -367,39 +382,69 @@ module Leverprice
       config = current_config
       return no_config(key, guard, scope) unless config
 
+      info.country = Request.country_of(request, context.country, config.country_header) unless @country_header
       product = config.products[key]
       return fallback_quote(key, guard, "unknown_product") unless product
       return fallback_quote(key, guard, "currency_mismatch") unless product.currency == guard.currency
 
-      experiment = product.experiment
-      return base_quote(key, guard, product) unless experiment
-      if experiment.variants.empty? || !experiment.variants.all? { |v| in_bounds?(guard, product, v.price) }
+      experiment = experiment_for(product, info.country)
+      return base_quote(key, guard, product, info.country) unless experiment
+      if experiment.variants.empty? || !experiment.variants.all? { |v| in_bounds?(product, v.price) }
         return fallback_quote(key, guard, "out_of_bounds")
       end
 
-      experiment_quote(key, guard, context, info, scope, config, product)
+      region = region_for(guard, product, info.country)
+      experiment_quote(key, guard, context, info, scope, config, product, experiment, region)
     rescue StandardError => e
       report(e)
       bot ? fallback_quote(key, guard, "bot") : no_config(key, guard, scope)
     end
 
-    def base_quote(key, guard, product)
-      return fallback_quote(key, guard, "out_of_bounds") unless in_bounds?(guard, product, product.price)
+    # The test the visitor is in. A scoped test runs only for visitors from its countries: everyone else,
+    # and anyone whose country is unknown, is priced as if the product had no test.
+    def experiment_for(product, country)
+      experiment = product.experiment
+      return experiment if experiment.nil? || experiment.scope.nil?
 
-      price_quote(key, guard, product.price, "base_price", product.checkout_url)
+      experiment.scope.include?(country) ? experiment : nil
+    end
+
+    def base_quote(key, guard, product, country)
+      return fallback_quote(key, guard, "out_of_bounds") unless in_bounds?(product, product.price)
+
+      region = region_for(guard, product, country)
+      quote = if region
+                regional_quote(key, guard, region, "base_price")
+              else
+                price_quote(key, guard, product.price, "base_price", product.checkout_url)
+              end
+      quote.country = country
+      quote
+    end
+
+    # The visitor's region when its price may be served: in the guard's currency, or in any with local currencies.
+    def region_for(guard, product, country)
+      return nil if country.nil?
+
+      index = product.region_of[country]
+      return nil unless index
+
+      region = product.regions[index]
+      return nil unless region.currency == guard.currency || @local_currencies
+
+      Region.new(index, region.currency, region.price)
     end
 
     def bot_quote(key, guard)
       product = current_config&.products&.fetch(key, nil)
-      if product && product.currency == guard.currency && in_bounds?(guard, product, product.price)
+      if product && product.currency == guard.currency && in_bounds?(product, product.price)
         return price_quote(key, guard, product.price, "bot", product.checkout_url)
       end
 
       fallback_quote(key, guard, "bot")
     end
 
-    def experiment_quote(key, guard, context, info, scope, config, product)
-      experiment = product.experiment
+    def experiment_quote(key, guard, context, info, scope, config, product, experiment, region)
       hmac_key = hmac_key_for(config.assignment_key)
       user_id = normalize_user_id(context.user_id)
       state = prior_state(scope, info, user_id, config) || verified_state(hmac_key, info)
@@ -410,7 +455,8 @@ module Leverprice
       visitor_id = Util.hmac_hex(hmac_key, "pp:visitor:v1:#{visitor_key}", 32)
       assigned = state.a[experiment.id]
       sticky = assigned && experiment.variants.find { |v| v.id == assigned }
-      variant = sticky || Util.pick_variant(experiment.variants, Util.bucket_for(experiment.salt, visitor_id))
+      variant = sticky || Util.pick_variant(experiment.variants, Util.bucket_for(experiment.salt, visitor_id),
+                                            experiment.split_of[info.country])
       unless sticky
         Cookie.assign(state, experiment.id, variant.id)
         changed = true
@@ -418,7 +464,7 @@ module Leverprice
 
       logged = state.x.include?(experiment.id) || exposed?(experiment.id, visitor_id)
       if !logged && auto_exposure?(context.exposure) && !info.prefetch
-        record_exposure(experiment.id, variant.id, visitor_id)
+        record_exposure(experiment.id, variant.id, visitor_id, info.country)
         logged = true
       end
       changed = true if logged && Cookie.mark_exposed(state, experiment.id)
@@ -427,8 +473,10 @@ module Leverprice
       signature = Util.hmac_hex(hmac_key, "pp:attr:v1:#{experiment.id}:#{variant.id}:#{visitor_id}", 16)
       Quote.new(
         product_key: key,
-        price: variant.price,
-        currency: guard.currency,
+        price: region ? variant.regional[region.index] : variant.price,
+        currency: region ? region.currency : guard.currency,
+        country: info.country,
+        regional: !region.nil?,
         is_fallback: false,
         reason: "experiment",
         experiment_id: experiment.id,
@@ -436,7 +484,7 @@ module Leverprice
         visitor_id: visitor_id,
         metadata: { "pp_exp" => experiment.id, "pp_var" => variant.id, "pp_vid" => visitor_id, "pp_sig" => signature },
         set_cookie: changed ? [assignment_cookie(hmac_key, state)] : [],
-        checkout_url: variant.checkout_url || product.checkout_url,
+        checkout_url: region ? nil : (variant.checkout_url || product.checkout_url),
         exposure_logged: logged
       )
     end
@@ -476,6 +524,8 @@ module Leverprice
         product_key: key,
         price: guard.fallback_price,
         currency: guard.currency,
+        country: nil,
+        regional: false,
         is_fallback: true,
         reason: reason,
         experiment_id: nil,
@@ -496,10 +546,18 @@ module Leverprice
       quote
     end
 
-    def in_bounds?(guard, product, price)
+    def regional_quote(key, guard, region, reason)
+      quote = fallback_quote(key, guard, reason)
+      quote.price = region.price
+      quote.currency = region.currency
+      quote.regional = true
+      quote.is_fallback = false
+      quote
+    end
+
+    def in_bounds?(product, price)
       value = Util.safe_int(price)
-      !value.nil? && value.positive? && value >= [guard.min_price, product.min_price].max &&
-        value <= [guard.max_price, product.max_price].min
+      !value.nil? && value.positive? && value >= product.min_price && value <= product.max_price
     end
 
     def auto_exposure?(exposure)
@@ -547,15 +605,17 @@ module Leverprice
         raise ArgumentError, "#{where}.fallback_price must be a positive integer (minor units)"
       end
 
-      min_price = option(guard, :min_price, :minPrice)
-      max_price = option(guard, :max_price, :maxPrice)
-      min_price = min_price.nil? ? 1 : Util.safe_int(min_price)
-      max_price = max_price.nil? ? Util::MAX_SAFE_INTEGER : Util.safe_int(max_price)
-      unless min_price && max_price && min_price <= max_price
-        raise ArgumentError, "#{where}: min_price and max_price must be integers with min_price <= max_price"
-      end
+      Guard.new(currency.downcase, fallback_price).freeze
+    end
 
-      Guard.new(currency.downcase, fallback_price, min_price, max_price).freeze
+    def normalize_country_header(value)
+      return nil if value.nil?
+
+      name = value.is_a?(String) ? value.b.gsub(ASCII_SPACE_ENDS_RE, "") : value
+      return nil if name == ""
+      return name.downcase.force_encoding(Util::UTF_8) if Util.str_match?(HEADER_NAME_RE, name)
+
+      raise ArgumentError, "Leverprice: country_header is not a valid header name"
     end
 
     def option(hash, *names)
@@ -746,7 +806,7 @@ module Leverprice
       @lock.synchronize { @exposed.key?("#{experiment_id}:#{visitor_id}") }
     end
 
-    def record_exposure(experiment_id, variant_id, visitor_id)
+    def record_exposure(experiment_id, variant_id, visitor_id, country)
       key = "#{experiment_id}:#{visitor_id}"
       fresh = @lock.synchronize do
         next false if @exposed.key?(key)
@@ -756,13 +816,15 @@ module Leverprice
       end
       return false unless fresh
 
-      enqueue(
+      event = {
         "type" => "exposure",
         "experimentId" => experiment_id,
         "variantId" => variant_id,
         "visitorId" => visitor_id,
         "timestamp" => now
-      )
+      }
+      event["country"] = country if country && country != ""
+      enqueue(event)
     end
 
     def attribution_of(metadata)

@@ -18,7 +18,7 @@ class Signer
     { "payload" => payload, "signature" => b64(@root.sign(nil, payload)), "rootKeyId" => "r1" }
   end
 
-  def envelope(version: 1, products: self.class.products, secret_key: TestHelpers::SECRET_KEY)
+  def envelope(version: 1, products: self.class.products, secret_key: TestHelpers::SECRET_KEY, **fields)
     config = {
       schema: 2,
       projectId: "proj_test",
@@ -28,7 +28,7 @@ class Signer
       assignmentKey: ASSIGNMENT_KEY,
       keyFingerprints: [OpenSSL::Digest::SHA256.hexdigest(secret_key)[0, 16]],
       products: products
-    }
+    }.merge(fields)
     payload = b64(JSON.generate(config))
     { "payload" => payload, "signature" => b64(@signing.sign(nil, payload)), "keyId" => "k1", "keyset" => keyset }
   end
@@ -53,6 +53,18 @@ class Signer
       },
       "basic" => { "id" => "prod_basic", "currency" => "usd", "price" => price, "minPrice" => 100, "maxPrice" => 5000 }
     }
+  end
+
+  def self.regional_products
+    regions = [{ "countries" => %w[IN], "currency" => "inr", "price" => 99_900 },
+               { "countries" => %w[BR MX], "currency" => "usd", "price" => 1500 }]
+    base = products
+    variants = base["pro"]["experiment"]["variants"]
+    base["pro"]["regions"] = regions
+    base["basic"]["regions"] = regions
+    variants[0]["regional"] = [64_900, 1300]
+    variants[1]["regional"] = [129_900, 2100]
+    base
   end
 
   private
